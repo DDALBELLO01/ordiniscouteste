@@ -1,4 +1,4 @@
-kind: WasmerApp
+kind: wasmer.io/App.v1
 name: ordiniscouteste
 build:
   steps:
