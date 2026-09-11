@@ -469,13 +469,3 @@ table tbody tr:hover {
     max-height: 90vh;
   }
 }
-
-@media (max-width: 1100px) {
-  .catalog-filters.admin-filters {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .catalog-filters.admin-filters input {
-    grid-column: 1 / -1;
-  }
-}

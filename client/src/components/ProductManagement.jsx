@@ -218,36 +218,40 @@ export default function ProductManagement() {
       )}
 
       <div className="catalog-filters admin-filters">
-        <input
-          type="search"
-          value={filters.search}
-          onChange={(e) => updateFilter('search', e.target.value)}
-          placeholder="Cerca per nome, tipologia, branca o taglia"
-          aria-label="Cerca prodotti admin"
-        />
-        <select value={filters.tipologia} onChange={(e) => updateFilter('tipologia', e.target.value)} aria-label="Filtra per tipologia">
-          <option value="">Tutte le tipologie</option>
-          {filterOptions.tipologie.map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-        <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
-          <option value="">Tutte le branche</option>
-          {filterOptions.branche.map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-        <select value={filters.taglia} onChange={(e) => updateFilter('taglia', e.target.value)} aria-label="Filtra per taglia">
-          <option value="">Tutte le taglie</option>
-          {filterOptions.taglie.map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-        <select value={filters.usato} onChange={(e) => updateFilter('usato', e.target.value)} aria-label="Filtra per stato articolo">
-          <option value="">Nuovi e usati</option>
-          <option value="nuovo">Solo nuovi</option>
-          <option value="usato">Solo usati</option>
-        </select>
-        <select value={filters.mostraHome} onChange={(e) => updateFilter('mostraHome', e.target.value)} aria-label="Filtra per visibilità home">
-          <option value="">Ogni visibilità</option>
-          <option value="visibile">Visibili nella home</option>
-          <option value="nascosto">Nascosti dalla home</option>
-        </select>
-        <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
+        <div className="filter-row">
+          <input
+            type="search"
+            value={filters.search}
+            onChange={(e) => updateFilter('search', e.target.value)}
+            placeholder="Cerca per nome, tipologia, branca o taglia"
+            aria-label="Cerca prodotti admin"
+          />
+          <select value={filters.tipologia} onChange={(e) => updateFilter('tipologia', e.target.value)} aria-label="Filtra per tipologia">
+            <option value="">Tutte le tipologie</option>
+            {filterOptions.tipologie.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
+            <option value="">Tutte le branche</option>
+            {filterOptions.branche.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+          <select value={filters.taglia} onChange={(e) => updateFilter('taglia', e.target.value)} aria-label="Filtra per taglia">
+            <option value="">Tutte le taglie</option>
+            {filterOptions.taglie.map(option => <option key={option} value={option}>{option}</option>)}
+          </select>
+        </div>
+        <div className="filter-row">
+          <select value={filters.usato} onChange={(e) => updateFilter('usato', e.target.value)} aria-label="Filtra per stato articolo">
+            <option value="">Nuovi e usati</option>
+            <option value="nuovo">Solo nuovi</option>
+            <option value="usato">Solo usati</option>
+          </select>
+          <select value={filters.mostraHome} onChange={(e) => updateFilter('mostraHome', e.target.value)} aria-label="Filtra per visibilità home">
+            <option value="">Ogni visibilità</option>
+            <option value="visibile">Visibili nella home</option>
+            <option value="nascosto">Nascosti dalla home</option>
+          </select>
+          <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
+        </div>
       </div>
 
       <div className="catalog-summary">{filteredProducts.length} di {products.length} articoli</div>
