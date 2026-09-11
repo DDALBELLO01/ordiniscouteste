@@ -14,6 +14,8 @@ export default function ProductSelector({ products, onAddItem }) {
     usato: '',
     disponibilita: ''
   })
+  const [sortField, setSortField] = useState('nome')
+  const [sortOrder, setSortDirection] = useState('asc')
 
   const handleQuantityChange = (productId, value) => {
     setQuantities({
@@ -86,16 +88,42 @@ export default function ProductSelector({ products, onAddItem }) {
       if (!groups.has(key)) groups.set(key, { ...product, items: [] })
       groups.get(key).items.push(product)
     })
-    return [...groups.values()]
-  }, [filteredProducts])
+    const list = [...groups.values()]
+    list.sort((a, b) => {
+      let valA = a[sortField]
+      let valB = b[sortField]
+
+      if (sortField === 'disponibilita') {
+        const getQty = (itemGroup) => {
+          const avail = itemGroup.items.filter(i => i.quantita_magazzino === null || i.quantita_magazzino === undefined || i.quantita_magazzino > 0)
+          if (avail.some(i => i.quantita_magazzino === null || i.quantita_magazzino === undefined)) return 999999
+          return avail.reduce((s, i) => s + (i.quantita_magazzino || 0), 0)
+        }
+        valA = getQty(a)
+        valB = getQty(b)
+      } else if (typeof valA === 'string') {
+        valA = valA.toLowerCase()
+        valB = (valB || '').toLowerCase()
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1
+      return 0
+    })
+    return list
+  }, [filteredProducts, sortField, sortOrder])
 
   const updateFilter = (name, value) => {
     setFilters(current => ({ ...current, [name]: value }))
   }
 
-  const resetFilters = () => setFilters({
-    search: '', tipologia: '', branca: '', taglia: '', usato: '', disponibilita: ''
-  })
+  const resetFilters = () => {
+    setFilters({
+      search: '', tipologia: '', branca: '', taglia: '', usato: '', disponibilita: ''
+    })
+    setSortField('nome')
+    setSortDirection('asc')
+  }
 
   return (
     <div className="product-selector">
@@ -131,6 +159,19 @@ export default function ProductSelector({ products, onAddItem }) {
             <option value="">Ogni disponibilità</option>
             <option value="disponibile">Disponibili</option>
             <option value="esaurito">Esauriti</option>
+          </select>
+          <select value={`${sortField}-${sortOrder}`} onChange={(e) => {
+            const [field, order] = e.target.value.split('-')
+            setSortField(field)
+            setSortDirection(order)
+          }} aria-label="Ordina catalogo">
+            <option value="nome-asc">Ordina per: Nome (A-Z)</option>
+            <option value="nome-desc">Ordina per: Nome (Z-A)</option>
+            <option value="prezzo-asc">Ordina per: Prezzo (Crescente)</option>
+            <option value="prezzo-desc">Ordina per: Prezzo (Decrescente)</option>
+            <option value="branca-asc">Ordina per: Branca (A-Z)</option>
+            <option value="tipologia-asc">Ordina per: Tipologia (A-Z)</option>
+            <option value="disponibilita-desc">Ordina per: Disponibilità</option>
           </select>
           <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
         </div>

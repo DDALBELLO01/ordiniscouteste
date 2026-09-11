@@ -265,6 +265,23 @@ table th {
   font-size: 14px;
 }
 
+table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+table th.sortable-th:hover {
+  background-color: #edf2f7;
+  color: #1a365d;
+}
+
+.sort-icon {
+  font-size: 11px;
+  color: #718096;
+  margin-left: 3px;
+}
+
 table td {
   padding: 12px;
   border-bottom: 1px solid #e2e8f0;

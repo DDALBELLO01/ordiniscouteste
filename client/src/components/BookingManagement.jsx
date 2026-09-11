@@ -9,7 +9,19 @@ export default function BookingManagement() {
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [togglingStatus, setTogglingStatus] = useState(false)
 
-  const statuses = ['attiva', 'confermata', 'ritirata', 'annullata']
+  const [sortConfig, setSortConfig] = useState({ field: 'data_prenotazione', direction: 'desc' })
+
+  const handleSort = (field) => {
+    setSortConfig(current => ({
+      field,
+      direction: current.field === field && current.direction === 'asc' ? 'desc' : 'asc'
+    }))
+  }
+
+  const renderSortIndicator = (field) => {
+    if (sortConfig.field !== field) return <span className="sort-icon"> ⇅</span>
+    return <span className="sort-icon">{sortConfig.direction === 'asc' ? ' ▲' : ' ▼'}</span>
+  }
 
   useEffect(() => {
     fetchBookings()
@@ -78,6 +90,26 @@ export default function BookingManagement() {
     }
   }
 
+  const sortedBookings = [...bookings].sort((a, b) => {
+    let valA = a[sortConfig.field]
+    let valB = b[sortConfig.field]
+
+    if (sortConfig.field === 'totale') {
+      valA = Number(valA || 0)
+      valB = Number(valB || 0)
+    } else if (sortConfig.field === 'num_items') {
+      valA = Number(valA || 0)
+      valB = Number(valB || 0)
+    } else if (typeof valA === 'string') {
+      valA = valA.toLowerCase()
+      valB = (valB || '').toString().toLowerCase()
+    }
+
+    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
+    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
+    return 0
+  })
+
   if (loading) {
     return <div className="loading">Caricamento prenotazioni...</div>
   }
@@ -101,18 +133,18 @@ export default function BookingManagement() {
         <table>
           <thead>
             <tr>
-              <th>Nome</th>
-              <th>Email</th>
-              <th>Branca</th>
-              <th>Data</th>
-              <th>Articoli</th>
-              <th>Totale</th>
-              <th>Stato</th>
+              <th className="sortable-th" onClick={() => handleSort('nome_prenotante')}>Nome{renderSortIndicator('nome_prenotante')}</th>
+              <th className="sortable-th" onClick={() => handleSort('email_prenotante')}>Email{renderSortIndicator('email_prenotante')}</th>
+              <th className="sortable-th" onClick={() => handleSort('branca_riferimento')}>Branca{renderSortIndicator('branca_riferimento')}</th>
+              <th className="sortable-th" onClick={() => handleSort('data_prenotazione')}>Data{renderSortIndicator('data_prenotazione')}</th>
+              <th className="sortable-th" onClick={() => handleSort('num_items')}>Articoli{renderSortIndicator('num_items')}</th>
+              <th className="sortable-th" onClick={() => handleSort('totale')}>Totale{renderSortIndicator('totale')}</th>
+              <th className="sortable-th" onClick={() => handleSort('stato')}>Stato{renderSortIndicator('stato')}</th>
               <th>Azioni</th>
             </tr>
           </thead>
           <tbody>
-            {bookings.map(booking => (
+            {sortedBookings.map(booking => (
               <tr key={booking.id}>
                 <td>{booking.nome_prenotante}</td>
                 <td>{booking.email_prenotante}</td>

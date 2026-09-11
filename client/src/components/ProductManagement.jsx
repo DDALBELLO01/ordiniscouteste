@@ -172,6 +172,19 @@ export default function ProductManagement() {
     setShowForm(false)
   }
 
+  const [sortConfig, setSortConfig] = useState({ field: 'nome', direction: 'asc' })
+
+  const handleSort = (field) => {
+    setSortConfig(current => ({
+      field,
+      direction: current.field === field && current.direction === 'asc' ? 'desc' : 'asc'
+    }))
+  }
+
+  const renderSortIndicator = (field) => {
+    if (sortConfig.field !== field) return <span className="sort-icon"> ⇅</span>
+    return <span className="sort-icon">{sortConfig.direction === 'asc' ? ' ▲' : ' ▼'}</span>
+  }
   const filterOptions = useMemo(() => ({
     tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
     branche: [...new Set(products.map(product => product.branca).filter(Boolean))].sort(),
@@ -192,13 +205,33 @@ export default function ProductManagement() {
       (!filters.mostraHome || (filters.mostraHome === 'visibile' ? product.mostra_home !== 0 : product.mostra_home === 0))
   }), [products, filters])
 
-  const updateFilter = (name, value) => {
-    setFilters(current => ({ ...current, [name]: value }))
-  }
+  const sortedProducts = useMemo(() => {
+    const list = [...filteredProducts]
+    list.sort((a, b) => {
+      let valA = a[sortConfig.field]
+      let valB = b[sortConfig.field]
 
-  const resetFilters = () => setFilters({
-    search: '', tipologia: '', branca: '', taglia: '', usato: '', mostraHome: ''
-  })
+      if (valA === null || valA === undefined) valA = ''
+      if (valB === null || valB === undefined) valB = ''
+
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase()
+        valB = valB.toString().toLowerCase()
+      }
+
+      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
+      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
+      return 0
+    })
+    return list
+  }, [filteredProducts, sortConfig])
+
+  const resetFilters = () => {
+    setFilters({
+      search: '', tipologia: '', branca: '', taglia: '', usato: '', mostraHome: ''
+    })
+    setSortConfig({ field: 'nome', direction: 'asc' })
+  }
 
   if (loading) {
     return <div className="loading">Caricamento prodotti...</div>
@@ -260,20 +293,20 @@ export default function ProductManagement() {
         <table>
           <thead>
             <tr>
-              <th>Nome</th>
-              <th>Tipologia</th>
-              <th>Branca</th>
-              <th>Taglia</th>
+              <th className="sortable-th" onClick={() => handleSort('nome')}>Nome{renderSortIndicator('nome')}</th>
+              <th className="sortable-th" onClick={() => handleSort('tipologia')}>Tipologia{renderSortIndicator('tipologia')}</th>
+              <th className="sortable-th" onClick={() => handleSort('branca')}>Branca{renderSortIndicator('branca')}</th>
+              <th className="sortable-th" onClick={() => handleSort('taglia')}>Taglia{renderSortIndicator('taglia')}</th>
               <th>Immagine</th>
-              <th>Magazzino</th>
-              <th>Prezzo</th>
-              <th>Usato</th>
-              <th>Home</th>
+              <th className="sortable-th" onClick={() => handleSort('quantita_magazzino')}>Magazzino{renderSortIndicator('quantita_magazzino')}</th>
+              <th className="sortable-th" onClick={() => handleSort('prezzo')}>Prezzo{renderSortIndicator('prezzo')}</th>
+              <th className="sortable-th" onClick={() => handleSort('usato')}>Usato{renderSortIndicator('usato')}</th>
+              <th className="sortable-th" onClick={() => handleSort('mostra_home')}>Home{renderSortIndicator('mostra_home')}</th>
               <th>Azioni</th>
             </tr>
           </thead>
           <tbody>
-            {filteredProducts.map(product => (
+            {sortedProducts.map(product => (
               <Fragment key={product.id}>
               <tr>
                 <td>{product.nome}</td>
