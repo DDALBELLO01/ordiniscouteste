@@ -44,7 +44,14 @@ export default function ProductSelector({ products, onAddItem }) {
   }
 
   const handleAddGroup = (group) => {
-    if (group.tipologia.toLowerCase().includes('specialit') || group.nome.toLowerCase().includes('specialit')) {
+    const tipologiaLower = group.tipologia.toLowerCase()
+    const nomeLower = group.nome.toLowerCase()
+    if (
+      tipologiaLower.includes('specialit') ||
+      nomeLower.includes('specialit') ||
+      tipologiaLower.includes('barrett') ||
+      nomeLower.includes('barrett')
+    ) {
       setSpecialitaName('')
       setSpecialitaPicker(group)
       return
@@ -238,38 +245,45 @@ export default function ProductSelector({ products, onAddItem }) {
         </div>
       )}
 
-      {specialitaPicker && (
-        <div className="size-picker-overlay" role="dialog" aria-modal="true" aria-labelledby="specialita-picker-title">
-          <div className="size-picker">
-            <div className="size-picker-header">
-              <h3 id="specialita-picker-title">Scegli la specialità</h3>
-              <button type="button" className="btn-close" onClick={() => setSpecialitaPicker(null)} aria-label="Chiudi">×</button>
+      {specialitaPicker && (() => {
+        const isBarretta = specialitaPicker.tipologia.toLowerCase().includes('barrett') || specialitaPicker.nome.toLowerCase().includes('barrett')
+        const labelText = isBarretta ? 'Scegli la funzione / barretta' : 'Scegli la specialità'
+        const placeholderText = isBarretta ? 'Inserisci la funzione (es. Capo Branco, Akela, CR...)' : 'Inserisci il nome della specialità'
+        const buttonText = isBarretta ? 'Aggiungi barretta' : 'Aggiungi specialità'
+
+        return (
+          <div className="size-picker-overlay" role="dialog" aria-modal="true" aria-labelledby="specialita-picker-title">
+            <div className="size-picker">
+              <div className="size-picker-header">
+                <h3 id="specialita-picker-title">{labelText}</h3>
+                <button type="button" className="btn-close" onClick={() => setSpecialitaPicker(null)} aria-label="Chiudi">×</button>
+              </div>
+              <p>{specialitaPicker.nome}</p>
+              <input
+                type="text"
+                className="specialita-input"
+                value={specialitaName}
+                onChange={(event) => setSpecialitaName(event.target.value)}
+                placeholder={placeholderText}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="btn-add specialita-confirm"
+                disabled={!specialitaName.trim()}
+                onClick={() => {
+                  const product = specialitaPicker.items[0]
+                  handleAdd({ ...product, specialita: specialitaName.trim() })
+                  setSpecialitaPicker(null)
+                  setSpecialitaName('')
+                }}
+              >
+                {buttonText}
+              </button>
             </div>
-            <p>{specialitaPicker.nome}</p>
-            <input
-              type="text"
-              className="specialita-input"
-              value={specialitaName}
-              onChange={(event) => setSpecialitaName(event.target.value)}
-              placeholder="Inserisci il nome della specialità"
-              autoFocus
-            />
-            <button
-              type="button"
-              className="btn-add specialita-confirm"
-              disabled={!specialitaName.trim()}
-              onClick={() => {
-                const product = specialitaPicker.items[0]
-                handleAdd({ ...product, specialita: specialitaName.trim() })
-                setSpecialitaPicker(null)
-                setSpecialitaName('')
-              }}
-            >
-              Aggiungi specialità
-            </button>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
