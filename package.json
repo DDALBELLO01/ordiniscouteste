@@ -4,7 +4,8 @@
   "description": "Webapp per gestione ordini scout con database su Wasmer",
   "private": true,
   "scripts": {
-    "install": "npm install --prefix server && npm install --prefix client",
+    "setup": "npm install --prefix server && npm install --prefix client",
+    "postinstall": "npm install --prefix server && npm install --prefix client",
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
     "start": "npm start --prefix server",
