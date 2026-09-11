@@ -1,5 +1,3 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
 import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
@@ -14,6 +12,9 @@ export async function initializeDatabase() {
   if (process.env.DB_HOST) {
     return initializePostgresDatabase();
   }
+
+  const { default: sqlite3 } = await import('sqlite3');
+  const { open } = await import('sqlite');
 
   const dbDir = path.dirname(DB_PATH);
   if (!fs.existsSync(dbDir)) {
