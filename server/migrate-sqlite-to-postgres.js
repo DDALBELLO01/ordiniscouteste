@@ -4,6 +4,7 @@ import pg from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { initializeDatabase } from './database.js';
 
 dotenv.config();
 
@@ -24,7 +25,13 @@ async function migrate() {
     throw new Error('Imposta DB_HOST, DB_PORT, DB_NAME, DB_USERNAME e DB_PASSWORD prima della migrazione.');
   }
 
+  // Assicura che le tabelle su PostgreSQL siano create
+  await initializeDatabase();
+
   const sqlite = await open({ filename: sqlitePath, driver: sqlite3.Database });
+  const tableInfo = await sqlite.all("PRAGMA table_info('prodotti')");
+  const sqliteColumns = tableInfo.map(c => c.name);
+
   const pool = new Pool({
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
@@ -38,12 +45,18 @@ async function migrate() {
   try {
     await client.query('BEGIN');
     for (const [table, columns] of Object.entries(tables)) {
-      const rows = await sqlite.all(`SELECT ${columns.join(', ')} FROM ${table}`);
+      const info = await sqlite.all(`PRAGMA table_info('${table}')`);
+      const tableSqliteCols = info.map(c => c.name);
+      const validColumns = columns.filter(col => tableSqliteCols.includes(col));
+
+      if (validColumns.length === 0) continue;
+
+      const rows = await sqlite.all(`SELECT ${validColumns.join(', ')} FROM ${table}`);
       for (const row of rows) {
-        const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+        const placeholders = validColumns.map((_, index) => `$${index + 1}`).join(', ');
         await client.query(
-          `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
-          columns.map(column => row[column] ?? null)
+          `INSERT INTO ${table} (${validColumns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+          validColumns.map(column => row[column] ?? null)
         );
       }
       console.log(`${table}: ${rows.length} righe`);
