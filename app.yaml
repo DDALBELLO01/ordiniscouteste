@@ -1,0 +1,12 @@
+kind: WasmerApp
+name: ordiniscouteste
+build:
+  steps:
+    - name: install
+      command: npm run install
+    - name: build
+      command: npm run build
+redirect:
+  force_https: true
+run:
+  command: node server/server.js
