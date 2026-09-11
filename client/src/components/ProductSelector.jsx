@@ -16,6 +16,7 @@ export default function ProductSelector({ products, onAddItem }) {
   })
   const [sortField, setSortField] = useState('nome')
   const [sortOrder, setSortDirection] = useState('asc')
+  const [showFilters, setShowFilters] = useState(true)
 
   const handleQuantityChange = (productId, value) => {
     setQuantities({
@@ -134,55 +135,69 @@ export default function ProductSelector({ products, onAddItem }) {
 
   return (
     <div className="product-selector">
-      <div className="catalog-filters">
-        <div className="filter-row">
-          <input
-            type="search"
-            value={filters.search}
-            onChange={(e) => updateFilter('search', e.target.value)}
-            placeholder="Cerca prodotto, tipologia, branca o taglia"
-            aria-label="Cerca prodotti"
-          />
-          <select value={filters.tipologia} onChange={(e) => updateFilter('tipologia', e.target.value)} aria-label="Filtra per tipologia">
-            <option value="">Tutte le tipologie</option>
-            {options.tipologie.map(option => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
-            <option value="">Tutte le branche</option>
-            {options.branche.map(option => <option key={option} value={option}>{option}</option>)}
-          </select>
-          <select value={filters.taglia} onChange={(e) => updateFilter('taglia', e.target.value)} aria-label="Filtra per taglia">
-            <option value="">Tutte le taglie</option>
-            {options.taglie.map(option => <option key={option} value={option}>{option}</option>)}
-          </select>
-        </div>
-        <div className="filter-row">
-          <select value={filters.usato} onChange={(e) => updateFilter('usato', e.target.value)} aria-label="Filtra per stato articolo">
-            <option value="">Nuovi e usati</option>
-            <option value="nuovo">Solo nuovi</option>
-            <option value="usato">Solo usati</option>
-          </select>
-          <select value={filters.disponibilita} onChange={(e) => updateFilter('disponibilita', e.target.value)} aria-label="Filtra per disponibilità">
-            <option value="">Ogni disponibilità</option>
-            <option value="disponibile">Disponibili</option>
-            <option value="esaurito">Esauriti</option>
-          </select>
-          <select value={`${sortField}-${sortOrder}`} onChange={(e) => {
-            const [field, order] = e.target.value.split('-')
-            setSortField(field)
-            setSortDirection(order)
-          }} aria-label="Ordina catalogo">
-            <option value="nome-asc">Ordina per: Nome (A-Z)</option>
-            <option value="nome-desc">Ordina per: Nome (Z-A)</option>
-            <option value="prezzo-asc">Ordina per: Prezzo (Crescente)</option>
-            <option value="prezzo-desc">Ordina per: Prezzo (Decrescente)</option>
-            <option value="branca-asc">Ordina per: Branca (A-Z)</option>
-            <option value="tipologia-asc">Ordina per: Tipologia (A-Z)</option>
-            <option value="disponibilita-desc">Ordina per: Disponibilità</option>
-          </select>
-          <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
-        </div>
+      <div className="filters-header">
+        <button
+          type="button"
+          className="btn-toggle-filters"
+          onClick={() => setShowFilters(!showFilters)}
+          aria-expanded={showFilters}
+        >
+          <span>🔍 {showFilters ? 'Nascondi filtri e ricerca' : 'Mostra filtri e ricerca'}</span>
+          <span className="toggle-icon">{showFilters ? '▲' : '▼'}</span>
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="catalog-filters">
+          <div className="filter-row">
+            <input
+              type="search"
+              value={filters.search}
+              onChange={(e) => updateFilter('search', e.target.value)}
+              placeholder="Cerca prodotto, tipologia, branca o taglia"
+              aria-label="Cerca prodotti"
+            />
+            <select value={filters.tipologia} onChange={(e) => updateFilter('tipologia', e.target.value)} aria-label="Filtra per tipologia">
+              <option value="">Tutte le tipologie</option>
+              {options.tipologie.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
+              <option value="">Tutte le branche</option>
+              {options.branche.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={filters.taglia} onChange={(e) => updateFilter('taglia', e.target.value)} aria-label="Filtra per taglia">
+              <option value="">Tutte le taglie</option>
+              {options.taglie.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
+          <div className="filter-row">
+            <select value={filters.usato} onChange={(e) => updateFilter('usato', e.target.value)} aria-label="Filtra per stato articolo">
+              <option value="">Nuovi e usati</option>
+              <option value="nuovo">Solo nuovi</option>
+              <option value="usato">Solo usati</option>
+            </select>
+            <select value={filters.disponibilita} onChange={(e) => updateFilter('disponibilita', e.target.value)} aria-label="Filtra per disponibilità">
+              <option value="">Ogni disponibilità</option>
+              <option value="disponibile">Disponibili</option>
+              <option value="esaurito">Esauriti</option>
+            </select>
+            <select value={`${sortField}-${sortOrder}`} onChange={(e) => {
+              const [field, order] = e.target.value.split('-')
+              setSortField(field)
+              setSortDirection(order)
+            }} aria-label="Ordina catalogo">
+              <option value="nome-asc">Ordina per: Nome (A-Z)</option>
+              <option value="nome-desc">Ordina per: Nome (Z-A)</option>
+              <option value="prezzo-asc">Ordina per: Prezzo (Crescente)</option>
+              <option value="prezzo-desc">Ordina per: Prezzo (Decrescente)</option>
+              <option value="branca-asc">Ordina per: Branca (A-Z)</option>
+              <option value="tipologia-asc">Ordina per: Tipologia (A-Z)</option>
+              <option value="disponibilita-desc">Ordina per: Disponibilità</option>
+            </select>
+            <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
+          </div>
+        </div>
+      )}
 
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
 

@@ -7,6 +7,7 @@ import AdminPanel from './pages/AdminPanel'
 function App() {
   const [page, setPage] = useState('public')
   const [adminLogged, setAdminLogged] = useState(false)
+  const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
 
   useEffect(() => {
     const token = localStorage.getItem('adminToken')
@@ -19,17 +20,42 @@ function App() {
     localStorage.removeItem('adminToken')
     setAdminLogged(false)
     setPage('public')
+    setCartSummary({ count: 0, total: 0 })
+  }
+
+  const handlePageChange = (newPage) => {
+    setPage(newPage)
+    if (newPage !== 'public') {
+      setCartSummary({ count: 0, total: 0 })
+    }
   }
 
   return (
     <div className="app">
       <header className="app-header">
         <div className="header-content">
-          <h1>🏕️ Ordini Scout - Gestione Materiale</h1>
+          <h1>🏕️ Ordini Scout</h1>
+
+          {page === 'public' && cartSummary.count > 0 && (
+            <button 
+              type="button" 
+              className="header-cart-btn"
+              onClick={() => {
+                const cartEl = document.getElementById('cart-section')
+                if (cartEl) {
+                  cartEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }}
+              aria-label="Vai al carrello"
+            >
+              🛒 {cartSummary.count} {cartSummary.count === 1 ? 'articolo' : 'articoli'} (€ {cartSummary.total.toFixed(2)}) ➔
+            </button>
+          )}
+
           <nav className="header-nav">
             <button 
               className={`nav-btn ${page === 'public' ? 'active' : ''}`}
-              onClick={() => { setPage('public'); handleLogout(); }}
+              onClick={() => { handlePageChange('public'); handleLogout(); }}
             >
               Home
             </button>
@@ -37,7 +63,7 @@ function App() {
               <>
                 <button 
                   className={`nav-btn ${page === 'admin' ? 'active' : ''}`}
-                  onClick={() => setPage('admin')}
+                  onClick={() => handlePageChange('admin')}
                 >
                   Admin Panel
                 </button>
@@ -48,7 +74,7 @@ function App() {
             ) : (
               <button 
                 className={`nav-btn ${page === 'admin' ? 'active' : ''}`}
-                onClick={() => setPage('admin')}
+                onClick={() => handlePageChange('admin')}
               >
                 Admin
               </button>
@@ -58,7 +84,7 @@ function App() {
       </header>
 
       <main className="app-main">
-        {page === 'public' && <PublicBooking />}
+        {page === 'public' && <PublicBooking onCartChange={setCartSummary} />}
         {page === 'admin' && <AdminPanel onLoggedIn={() => setAdminLogged(true)} />}
       </main>
 

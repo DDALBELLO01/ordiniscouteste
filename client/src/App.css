@@ -6,10 +6,13 @@
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
   background: linear-gradient(135deg, #2c5282 0%, #1a365d 100%);
   color: white;
-  padding: 20px 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 14px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .header-content {
@@ -19,11 +22,39 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 15px;
 }
 
 .app-header h1 {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 600;
+  margin: 0;
+}
+
+.header-cart-btn {
+  background-color: #ed8936;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.header-cart-btn:hover {
+  background-color: #dd6b20;
+  transform: scale(1.03);
+}
+
+.header-cart-btn:active {
+  transform: scale(0.98);
 }
 
 .header-nav {
@@ -79,22 +110,36 @@
 }
 
 @media (max-width: 768px) {
+  .app-header {
+    padding: 10px 0;
+  }
+
   .header-content {
-    flex-direction: column;
-    gap: 20px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
   }
 
   .app-header h1 {
-    font-size: 20px;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 17px;
+    margin: 0;
+  }
+
+  .header-cart-btn {
+    font-size: 13px;
+    padding: 6px 12px;
   }
 
   .header-nav {
-    flex-wrap: wrap;
-    justify-content: center;
+    gap: 8px;
+  }
+
+  .nav-btn {
+    padding: 6px 12px;
+    font-size: 13px;
   }
 
   .app-main {

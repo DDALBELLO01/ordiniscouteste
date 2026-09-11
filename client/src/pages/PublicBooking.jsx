@@ -4,7 +4,7 @@ import '../styles/PublicBooking.css'
 import ProductSelector from '../components/ProductSelector'
 import BookingForm from '../components/BookingForm'
 
-export default function PublicBooking() {
+export default function PublicBooking({ onCartChange }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
@@ -19,6 +19,14 @@ export default function PublicBooking() {
     const interval = setInterval(checkBookingsEnabled, 30000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (onCartChange) {
+      const count = selectedItems.reduce((sum, item) => sum + item.quantita, 0)
+      const total = selectedItems.reduce((sum, item) => sum + (item.quantita * item.prezzo), 0)
+      onCartChange({ count, total })
+    }
+  }, [selectedItems, onCartChange])
 
   const fetchProducts = async () => {
     try {
@@ -122,7 +130,7 @@ export default function PublicBooking() {
             />
           </div>
 
-          <div className="cart-section">
+          <div className="cart-section" id="cart-section">
             <h2>Riepilogo Prenotazione</h2>
             <div className="cart">
               {selectedItems.length === 0 ? (
