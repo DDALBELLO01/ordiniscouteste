@@ -1,0 +1,28 @@
+kind: wasmer.io/App.v0
+name: ordiniscouteste
+owner: ddalbello01
+package: .
+app_id: da_nm3IetwU00Vr
+annotations:
+  anybuild.run/config:
+    commands:
+      build: npm run build
+      install: npm run install
+      start: node server/server.js
+    edgejs_enable: true
+    edgejs_precompile: true
+    name: out
+    node_build_command: npm run build
+    node_install_inputs:
+    - package.json
+    - client/package.json
+    - server/package.json
+    node_install_requires_all_files: true
+    node_package_manager: npm
+    node_package_name: ordini-scout
+    node_remove_native_binaries: true
+    node_server: node
+  anybuild.run/provider: node
+  anybuild.run/version: 0.28.4
+  wasmer.io/version: 7.4.1
+enableDatabase: true
