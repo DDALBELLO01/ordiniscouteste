@@ -63,8 +63,18 @@ export default function ToBuyManagement() {
     setOrdering(true)
     setOrderResults(null)
     try {
+      const minimalItems = itemsToBuy.map(i => ({
+        id: i.id,
+        nome: i.nome,
+        taglia: i.taglia,
+        quantita_prenotata: i.quantita_prenotata,
+        scouting_id_prodotto: i.scouting_id_prodotto,
+        scouting_caratteristica_id: i.scouting_caratteristica_id,
+        immagine: i.immagine
+      }))
+
       const response = await axios.post('/api/admin/scouting-fse/ordina-tutti', {
-        items: itemsToBuy
+        items: minimalItems
       })
 
       setOrderResults(response.data.details)
