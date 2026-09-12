@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
-import { initializeEmailService, sendBookingEmail, sendAdminNotification } from './emailService.js';
+import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
 import { sendOrderToScoutingFse, parseCurlCommand, syncScoutingFseStock } from './scoutingFseService.js';
 
 dotenv.config();
@@ -250,11 +250,22 @@ app.delete('/api/admin/prodotti/:id', async (req, res) => {
 app.get('/api/admin/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
+    const { archiviate } = req.query;
+    let whereClause = '';
+    if (archiviate === 'true') {
+      whereClause = 'WHERE p.archiviata = 1';
+    } else if (archiviate === 'all') {
+      whereClause = '';
+    } else {
+      whereClause = 'WHERE (p.archiviata = 0 OR p.archiviata IS NULL)';
+    }
+
     const prenotazioni = await db.all(
       `SELECT p.*, COUNT(dp.id) as num_items,
         COALESCE(SUM(dp.quantita * dp.prezzo_unitario), 0) as totale
        FROM prenotazioni p
        LEFT JOIN dettagli_prenotazioni dp ON p.id = dp.prenotazione_id
+       ${whereClause}
        GROUP BY p.id
        ORDER BY p.data_prenotazione DESC`
     );
@@ -262,6 +273,20 @@ app.get('/api/admin/prenotazioni', async (req, res) => {
   } catch (error) {
     console.error('Errore lettura prenotazioni:', error);
     res.status(500).json({ error: 'Errore lettura prenotazioni' });
+  }
+});
+
+// ARCHIVIAZIONE MASSIVA: raggruppa tutte le prenotazioni attive nel giorno di archiviazione
+app.post('/api/admin/prenotazioni/archivia-tutte', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.run(
+      `UPDATE prenotazioni SET archiviata = 1, data_archiviazione = CURRENT_TIMESTAMP WHERE (archiviata = 0 OR archiviata IS NULL)`
+    );
+    res.json({ message: 'Prenotazioni archiviate con successo', archiviate: result.changes });
+  } catch (error) {
+    console.error('Errore archiviazione prenotazioni:', error);
+    res.status(500).json({ error: 'Errore archiviazione prenotazioni' });
   }
 });
 
@@ -621,16 +646,112 @@ app.put('/api/admin/config/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
     const { enabled } = req.body;
+    const previous = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['prenotazioni_abilitate']);
+    const eraAbilitata = previous?.valore === 'true';
+
     await db.run(
       'UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?',
       [enabled ? 'true' : 'false', 'prenotazioni_abilitate']
     );
-    res.json({ message: 'Configurazione aggiornata' });
+
+    let riepilogInviati = 0;
+    if (eraAbilitata && !enabled) {
+      riepilogInviati = await inviaRiepiloghiChiusuraBranche(db);
+    }
+
+    res.json({ message: 'Configurazione aggiornata', riepilogInviati });
   } catch (error) {
     console.error('Errore aggiornamento configurazione:', error);
     res.status(500).json({ error: 'Errore aggiornamento configurazione' });
   }
 });
+
+// Impostazioni: email dei capi unità per branca, usate per il riepilogo alla chiusura prenotazioni
+app.get('/api/admin/config/email-branche', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const row = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['email_capi_branca']);
+    let emails = {};
+    try { emails = row?.valore ? JSON.parse(row.valore) : {}; } catch { emails = {}; }
+    res.json({ emails });
+  } catch (error) {
+    console.error('Errore lettura email branche:', error);
+    res.status(500).json({ error: 'Errore lettura email branche' });
+  }
+});
+
+app.put('/api/admin/config/email-branche', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const { emails } = req.body;
+    if (!emails || typeof emails !== 'object' || Array.isArray(emails)) {
+      return res.status(400).json({ error: 'Formato email non valido' });
+    }
+
+    const valore = JSON.stringify(emails);
+    const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['email_capi_branca']);
+    if (existing) {
+      await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [valore, 'email_capi_branca']);
+    } else {
+      await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['email_capi_branca', valore]);
+    }
+
+    res.json({ message: 'Email branche aggiornate con successo' });
+  } catch (error) {
+    console.error('Errore salvataggio email branche:', error);
+    res.status(500).json({ error: 'Errore salvataggio email branche' });
+  }
+});
+
+// Predisposizione futura pagamento con carta: endpoint pronto ma non collegato/visibile in UI
+app.post('/api/pagamenti/carta/crea-intento', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const config = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['pagamento_carta_abilitato']);
+    if (config?.valore !== 'true') {
+      return res.status(503).json({ error: 'Pagamento con carta non ancora disponibile' });
+    }
+    // TODO: integrare un provider di pagamento (es. Stripe) quando la funzionalità verrà attivata
+    res.status(501).json({ error: 'Integrazione pagamento con carta non ancora implementata' });
+  } catch (error) {
+    console.error('Errore predisposizione pagamento carta:', error);
+    res.status(500).json({ error: 'Errore predisposizione pagamento carta' });
+  }
+});
+
+// Invia il riepilogo ordini al capo unità di ciascuna branca configurata
+async function inviaRiepiloghiChiusuraBranche(db) {
+  const row = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['email_capi_branca']);
+  let emailMap = {};
+  try { emailMap = row?.valore ? JSON.parse(row.valore) : {}; } catch { emailMap = {}; }
+
+  const branche = Object.keys(emailMap).filter(branca => emailMap[branca]);
+  if (branche.length === 0) return 0;
+
+  let inviati = 0;
+  for (const branca of branche) {
+    const destinatario = emailMap[branca];
+    const prenotazioni = await db.all(
+      `SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL) AND stato != 'annullata' AND (branca_riferimento = ? OR branca_riferimento = 'Tutti')`,
+      [branca]
+    );
+    if (prenotazioni.length === 0) continue;
+
+    const bookings = [];
+    for (const prenotazione of prenotazioni) {
+      const items = await db.all(
+        `SELECT dp.*, p.nome FROM dettagli_prenotazioni dp JOIN prodotti p ON dp.prodotto_id = p.id WHERE dp.prenotazione_id = ?`,
+        [prenotazione.id]
+      );
+      bookings.push({ prenotazione, items });
+    }
+
+    const inviata = await sendBrancaSummaryEmail(destinatario, branca, bookings);
+    if (inviata) inviati++;
+  }
+
+  return inviati;
+}
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });

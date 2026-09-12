@@ -99,6 +99,15 @@ export async function initializeDatabase() {
     await db.run('ALTER TABLE prenotazioni ADD COLUMN updated_at DATETIME');
     await db.run('UPDATE prenotazioni SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL');
   }
+  if (!colonnePrenotazioni.some(colonna => colonna.name === 'archiviata')) {
+    await db.run('ALTER TABLE prenotazioni ADD COLUMN archiviata INTEGER DEFAULT 0');
+  }
+  if (!colonnePrenotazioni.some(colonna => colonna.name === 'data_archiviazione')) {
+    await db.run('ALTER TABLE prenotazioni ADD COLUMN data_archiviazione DATETIME');
+  }
+  if (!colonnePrenotazioni.some(colonna => colonna.name === 'metodo_pagamento')) {
+    await db.run("ALTER TABLE prenotazioni ADD COLUMN metodo_pagamento TEXT DEFAULT 'in_sede'");
+  }
 
   // Tabella Dettagli Prenotazioni (linee di ordine)
   await db.exec(`
@@ -148,6 +157,15 @@ export async function initializeDatabase() {
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
     ['prenotazioni_abilitate', 'true']
+  );
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['email_capi_branca', '{}']
+  );
+  // Predisposizione futura pagamento con carta: funzionalità non ancora abilitata/visibile
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['pagamento_carta_abilitato', 'false']
   );
 
   return db;
@@ -237,6 +255,9 @@ async function initializePostgresDatabase() {
       data_prenotazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       stato TEXT DEFAULT 'attiva',
       note TEXT,
+      archiviata INTEGER DEFAULT 0,
+      data_archiviazione TIMESTAMP,
+      metodo_pagamento TEXT DEFAULT 'in_sede',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -262,10 +283,21 @@ async function initializePostgresDatabase() {
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_id_prodotto INTEGER;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_caratteristica_id INTEGER;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS esaurito_scouting INTEGER DEFAULT 0;
+    ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS archiviata INTEGER DEFAULT 0;
+    ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS data_archiviazione TIMESTAMP;
+    ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS metodo_pagamento TEXT DEFAULT 'in_sede';
   `);
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
     ['prenotazioni_abilitate', 'true']
+  );
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['email_capi_branca', '{}']
+  );
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['pagamento_carta_abilitato', 'false']
   );
   return db;
 }

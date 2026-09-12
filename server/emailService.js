@@ -191,3 +191,90 @@ export async function sendAdminNotification(bookingData) {
     return false;
   }
 }
+
+// Riepilogo inviato al capo unità di una branca quando le prenotazioni vengono chiuse
+export async function sendBrancaSummaryEmail(email, branca, bookings) {
+  if (!transporter) {
+    console.error('Email service not initialized');
+    return false;
+  }
+
+  try {
+    const totaleGenerale = bookings.reduce(
+      (sum, b) => sum + b.items.reduce((s, i) => s + i.quantita * i.prezzo_unitario, 0),
+      0
+    );
+
+    const bookingsHtml = bookings.map(b => {
+      const itemsHtml = b.items.map(item => `
+        <tr>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">${item.nome}${item.specialita ? ` - ${item.specialita}` : ''}</td>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">${item.quantita}</td>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${item.prezzo_unitario.toFixed(2)}</td>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+        </tr>
+      `).join('');
+      const totaleBooking = b.items.reduce((s, i) => s + i.quantita * i.prezzo_unitario, 0);
+
+      return `
+        <div style="margin-bottom: 20px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+          <p style="margin: 0 0 8px;"><strong>${b.prenotazione.nome_prenotante}</strong> (${b.prenotazione.email_prenotante})</p>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #e2e8f0;">
+                <th style="padding: 6px; text-align: left;">Prodotto</th>
+                <th style="padding: 6px; text-align: left;">Quantità</th>
+                <th style="padding: 6px; text-align: left;">Prezzo Unit.</th>
+                <th style="padding: 6px; text-align: left;">Totale</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <p style="margin: 8px 0 0; text-align: right;"><strong>Totale prenotazione: € ${totaleBooking.toFixed(2)}</strong></p>
+        </div>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; }
+            .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #2c5282; color: white; padding: 20px; border-radius: 5px; }
+            .total { font-size: 18px; font-weight: bold; text-align: right; padding: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>Riepilogo Ordini - Branca ${branca}</h2>
+            </div>
+            <div class="content" style="padding: 20px 0;">
+              <p>Le prenotazioni sono state chiuse. Ecco il riepilogo di tutti gli ordini per la branca <strong>${branca}</strong>:</p>
+              ${bookingsHtml}
+              <div class="total">
+                Totale complessivo branca: € ${totaleGenerale.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    await sendMailWithRetry({
+      from: process.env.SMTP_FROM,
+      to: email,
+      subject: `Riepilogo Ordini Chiusura Prenotazioni - ${branca}`,
+      html: htmlContent
+    });
+
+    console.log(`Riepilogo branca ${branca} inviato a: ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`Errore invio riepilogo branca ${branca}:`, error);
+    return false;
+  }
+}

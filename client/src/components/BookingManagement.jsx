@@ -10,6 +10,8 @@ export default function BookingManagement() {
   const [selectedBooking, setSelectedBooking] = useState(null)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [togglingStatus, setTogglingStatus] = useState(false)
+  const [viewMode, setViewMode] = useState('attive') // 'attive' | 'archiviate'
+  const [archiving, setArchiving] = useState(false)
 
   const [sortConfig, setSortConfig] = useState({ field: 'data_prenotazione', direction: 'desc' })
 
@@ -26,13 +28,14 @@ export default function BookingManagement() {
   }
 
   useEffect(() => {
-    fetchBookings()
+    fetchBookings(viewMode)
     checkBookingsStatus()
-  }, [])
+  }, [viewMode])
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (mode = viewMode) => {
     try {
-      const response = await axios.get('/api/admin/prenotazioni')
+      const archiviate = mode === 'archiviate' ? 'true' : 'false'
+      const response = await axios.get(`/api/admin/prenotazioni?archiviate=${archiviate}`)
       setBookings(response.data)
       setLoading(false)
     } catch (error) {
@@ -53,10 +56,14 @@ export default function BookingManagement() {
   const handleToggleBookings = async () => {
     setTogglingStatus(true)
     try {
-      await axios.put('/api/admin/config/prenotazioni', {
+      const chiusura = bookingsEnabled // se erano abilitate e ora si disabilitano, è una chiusura
+      const response = await axios.put('/api/admin/config/prenotazioni', {
         enabled: !bookingsEnabled
       })
       setBookingsEnabled(!bookingsEnabled)
+      if (chiusura && response.data.riepilogInviati > 0) {
+        alert(`Prenotazioni chiuse. Inviati ${response.data.riepilogInviati} riepiloghi ai capi unità configurati.`)
+      }
     } catch (error) {
       console.error('Errore:', error)
       alert('Errore aggiornamento configurazione')
@@ -92,6 +99,24 @@ export default function BookingManagement() {
     }
   }
 
+  const handleArchiveAll = async () => {
+    if (!confirm('Confermi l\'archiviazione di TUTTE le prenotazioni attive? Verranno spostate nella sezione "Archiviate" e separate da quelle nuove.')) {
+      return
+    }
+
+    setArchiving(true)
+    try {
+      const response = await axios.post('/api/admin/prenotazioni/archivia-tutte')
+      alert(`${response.data.archiviate} prenotazioni archiviate con successo.`)
+      fetchBookings(viewMode)
+    } catch (error) {
+      console.error('Errore archiviazione:', error)
+      alert('Errore archiviazione prenotazioni')
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   const sortedBookings = [...bookings].sort((a, b) => {
     let valA = a[sortConfig.field]
     let valB = b[sortConfig.field]
@@ -121,6 +146,32 @@ export default function BookingManagement() {
       <div className="management-header">
         <h3>Gestione Prenotazioni ({bookings.length})</h3>
         <div className="header-controls">
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              className={`btn-small ${viewMode === 'attive' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('attive')}
+            >
+              📄 Attive
+            </button>
+            <button
+              type="button"
+              className={`btn-small ${viewMode === 'archiviate' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('archiviate')}
+            >
+              📦 Archiviate
+            </button>
+          </div>
+          {viewMode === 'attive' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleArchiveAll}
+              disabled={archiving || bookings.length === 0}
+            >
+              {archiving ? '⏳ Archiviazione...' : '📦 Archivia Tutte le Prenotazioni Attive'}
+            </button>
+          )}
           <button 
             className={`btn-toggle ${bookingsEnabled ? 'enabled' : 'disabled'}`}
             onClick={handleToggleBookings}

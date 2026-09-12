@@ -5,6 +5,7 @@ import LoginForm from '../components/LoginForm'
 import ProductManagement from '../components/ProductManagement'
 import BookingManagement from '../components/BookingManagement'
 import ToBuyManagement from '../components/ToBuyManagement'
+import SettingsManagement from '../components/SettingsManagement'
 
 export default function AdminPanel({ onLoggedIn }) {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('adminToken'))
@@ -51,12 +52,19 @@ export default function AdminPanel({ onLoggedIn }) {
         >
           🛒 Da Acquistare (Scouting FSE)
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          ⚙️ Impostazioni
+        </button>
       </div>
 
       <div className="admin-content">
         {activeTab === 'products' && <ProductManagement />}
         {activeTab === 'bookings' && <BookingManagement />}
         {activeTab === 'tobuy' && <ToBuyManagement />}
+        {activeTab === 'settings' && <SettingsManagement />}
       </div>
     </div>
   )
