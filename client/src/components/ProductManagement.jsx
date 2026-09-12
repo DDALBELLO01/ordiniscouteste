@@ -72,7 +72,8 @@ export default function ProductManagement() {
     branca: '',
     taglia: '',
     usato: '',
-    mostraHome: ''
+    mostraHome: '',
+    giacenza: ''
   })
   const [formData, setFormData] = useState({
     nome: '',
@@ -198,12 +199,26 @@ export default function ProductManagement() {
       .filter(Boolean)
       .some(value => value.toLowerCase().includes(search))
 
+    const isUsato = product.usato === 1 || product.usato === true
+    const isZeroStock = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
+    const isDaAcquistare = !isUsato && isZeroStock
+
+    let matchesGiacenza = true
+    if (filters.giacenza === 'da_acquistare') {
+      matchesGiacenza = isDaAcquistare
+    } else if (filters.giacenza === 'esaurito') {
+      matchesGiacenza = isZeroStock
+    } else if (filters.giacenza === 'disponibile') {
+      matchesGiacenza = !isZeroStock
+    }
+
     return matchesSearch &&
       (!filters.tipologia || product.tipologia === filters.tipologia) &&
       (!filters.branca || product.branca === filters.branca) &&
       (!filters.taglia || product.taglia === filters.taglia) &&
-      (!filters.usato || (filters.usato === 'usato' ? product.usato === 1 : product.usato !== 1)) &&
-      (!filters.mostraHome || (filters.mostraHome === 'visibile' ? product.mostra_home !== 0 : product.mostra_home === 0))
+      (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
+      (!filters.mostraHome || (filters.mostraHome === 'visibile' ? product.mostra_home !== 0 : product.mostra_home === 0)) &&
+      matchesGiacenza
   }), [products, filters])
 
   const sortedProducts = useMemo(() => {
@@ -229,7 +244,7 @@ export default function ProductManagement() {
 
   const resetFilters = () => {
     setFilters({
-      search: '', tipologia: '', branca: '', taglia: '', usato: '', mostraHome: ''
+      search: '', tipologia: '', branca: '', taglia: '', usato: '', mostraHome: '', giacenza: ''
     })
     setSortConfig({ field: 'nome', direction: 'asc' })
   }
@@ -297,6 +312,12 @@ export default function ProductManagement() {
               <option value="visibile">Visibili nella home</option>
               <option value="nascosto">Nascosti dalla home</option>
             </select>
+            <select value={filters.giacenza} onChange={(e) => updateFilter('giacenza', e.target.value)} aria-label="Filtra per giacenza magazzino">
+              <option value="">Ogni giacenza</option>
+              <option value="da_acquistare">🛒 Da acquistare (Nuovi giacenza 0)</option>
+              <option value="disponibile">Disponibili</option>
+              <option value="esaurito">Esauriti</option>
+            </select>
             <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
           </div>
         </div>
@@ -333,7 +354,19 @@ export default function ProductManagement() {
                     <img className="product-thumb" src={product.immagine} alt="" />
                   ) : '-'}
                 </td>
-                <td>{product.quantita_magazzino === null || product.quantita_magazzino === undefined ? '∞' : product.quantita_magazzino}</td>
+                <td>
+                  {product.quantita_magazzino === null || product.quantita_magazzino === undefined ? (
+                    '∞ (Illimitato)'
+                  ) : Number(product.quantita_magazzino) <= 0 ? (
+                    product.usato ? (
+                      <span className="stock-badge stock-hidden">0 (Nascosto)</span>
+                    ) : (
+                      <span className="stock-badge stock-buy">🛒 Da Acquistare (0)</span>
+                    )
+                  ) : (
+                    product.quantita_magazzino
+                  )}
+                </td>
                 <td>€ {product.prezzo.toFixed(2)}</td>
                 <td>{product.usato ? '✓ Sì' : 'No'}</td>
                 <td>{product.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</td>

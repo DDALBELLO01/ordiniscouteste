@@ -282,6 +282,92 @@ table th.sortable-th:hover {
   margin-left: 3px;
 }
 
+.stock-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stock-buy {
+  background-color: #feebc8;
+  color: #c05621;
+  border: 1px solid #fbd38d;
+}
+
+.stock-hidden {
+  background-color: #e2e8f0;
+  color: #718096;
+}
+
+.modal-large {
+  max-width: 800px;
+  width: 95%;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-group-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.qty-edit-input {
+  width: 60px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.add-item-to-booking {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.add-item-to-booking select {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+}
+
+.modal-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tobuy-info-banner {
+  background-color: #ebf8ff;
+  border: 1px solid #bee3f8;
+  color: #2b6cb0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.btn-scouting-order {
+  background-color: #319795 !important;
+  color: white !important;
+  font-size: 15px !important;
+  padding: 10px 18px !important;
+}
+
+.btn-scouting-order:hover {
+  background-color: #2c7a7b !important;
+}
+
 table td {
   padding: 12px;
   border-bottom: 1px solid #e2e8f0;

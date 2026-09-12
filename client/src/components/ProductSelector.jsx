@@ -71,6 +71,11 @@ export default function ProductSelector({ products, onAddItem }) {
   }), [products])
 
   const filteredProducts = useMemo(() => products.filter(product => {
+    // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
+    const isUsato = product.usato === 1 || product.usato === true
+    const isOut = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
+    if (isUsato && isOut) return false
+
     const search = filters.search.trim().toLowerCase()
     const matchesSearch = !search || [product.nome, product.tipologia, product.branca, product.taglia]
       .filter(Boolean)

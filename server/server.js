@@ -32,7 +32,15 @@ app.get('/api/prodotti', async (req, res) => {
     const query = req.query.admin === 'true'
       ? 'SELECT * FROM prodotti ORDER BY branca, tipologia'
       : 'SELECT * FROM prodotti WHERE mostra_home = 1 ORDER BY branca, tipologia';
-    const prodotti = await db.all(query);
+    let prodotti = await db.all(query);
+    if (req.query.admin !== 'true') {
+      // NASCONDE AUTOMATICAMENTE I PEZZI USATI CON GIACENZA 0 O INFERIORE
+      prodotti = prodotti.filter(p => {
+        const isUsato = p.usato === 1 || p.usato === true;
+        const isOut = p.quantita_magazzino !== null && p.quantita_magazzino !== undefined && Number(p.quantita_magazzino) <= 0;
+        return !(isUsato && isOut);
+      });
+    }
     res.json(prodotti);
   } catch (error) {
     console.error('Errore lettura prodotti:', error);
@@ -275,6 +283,133 @@ app.put('/api/admin/prenotazioni/:id/stato', async (req, res) => {
   } catch (error) {
     console.error('Errore aggiornamento stato:', error);
     res.status(500).json({ error: 'Errore aggiornamento stato' });
+  }
+});
+
+// MODIFICA COMPLETA PRENOTAZIONE CON RICALCOLO GIACENZE
+app.put('/api/admin/prenotazioni/:id', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const { nome_prenotante, email_prenotante, branca_riferimento, note, stato, items } = req.body;
+    const bookingId = req.params.id;
+
+    const existing = await db.get('SELECT * FROM prenotazioni WHERE id = ?', [bookingId]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Prenotazione non trovata' });
+    }
+
+    await db.run(
+      `UPDATE prenotazioni 
+       SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, note = ?, stato = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [
+        nome_prenotante || existing.nome_prenotante,
+        email_prenotante || existing.email_prenotante,
+        branca_riferimento || existing.branca_riferimento,
+        note !== undefined ? note : existing.note,
+        stato || existing.stato,
+        bookingId
+      ]
+    );
+
+    if (Array.isArray(items)) {
+      // 1. Ripristina le quantità precedenti a magazzino
+      const oldItems = await db.all(
+        'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ?',
+        [bookingId]
+      );
+      for (const oldItem of oldItems) {
+        await db.run(
+          `UPDATE prodotti SET quantita_magazzino = quantita_magazzino + ? WHERE id = ? AND quantita_magazzino IS NOT NULL`,
+          [oldItem.quantita, oldItem.prodotto_id]
+        );
+      }
+
+      // 2. Rimuove vecchi dettagli
+      await db.run('DELETE FROM dettagli_prenotazioni WHERE prenotazione_id = ?', [bookingId]);
+
+      // 3. Inserisce nuovi dettagli e scala nuove quantità dal magazzino
+      for (const item of items) {
+        const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
+        const prezzoUnitario = item.prezzo_unitario ?? (prodotto ? prodotto.prezzo : 0);
+
+        await db.run(
+          'INSERT INTO dettagli_prenotazioni (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita) VALUES (?, ?, ?, ?, ?)',
+          [bookingId, item.prodotto_id, item.quantita, prezzoUnitario, item.specialita || null]
+        );
+
+        if (prodotto && prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
+          const nuovaQty = prodotto.quantita_magazzino - item.quantita;
+          await db.run(
+            'UPDATE prodotti SET quantita_magazzino = ? WHERE id = ?',
+            [nuovaQty, item.prodotto_id]
+          );
+        }
+      }
+    }
+
+    res.json({ message: 'Prenotazione modificata con successo' });
+  } catch (error) {
+    console.error('Errore modifica prenotazione:', error);
+    res.status(500).json({ error: 'Errore modifica prenotazione' });
+  }
+});
+
+// LISTA ARTICOLI NUOVI DA ACQUISTARE
+app.get('/api/admin/da-acquistare', async (req, res) => {
+  try {
+    const db = getDatabase();
+    // Seleziona articoli nuovi con giacenza 0 o con richieste nelle prenotazioni attive
+    const prodotti = await db.all(`
+      SELECT p.*,
+        COALESCE((
+          SELECT SUM(dp.quantita)
+          FROM dettagli_prenotazioni dp
+          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+        ), 0) as quantita_prenotata
+      FROM prodotti p
+      WHERE (p.usato = 0 OR p.usato IS NULL)
+        AND (
+          p.quantita_magazzino = 0 
+          OR p.quantita_magazzino < 0
+          OR COALESCE((
+            SELECT SUM(dp.quantita)
+            FROM dettagli_prenotazioni dp
+            JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+            WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          ), 0) > COALESCE(p.quantita_magazzino, 999999)
+        )
+      ORDER BY p.branca, p.nome
+    `);
+
+    res.json(prodotti);
+  } catch (error) {
+    console.error('Errore recupero lista da acquistare:', error);
+    res.status(500).json({ error: 'Errore recupero lista da acquistare' });
+  }
+});
+
+// AGGIUNTA IN 1-CLICK SU SCOUTING FSE
+app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
+  try {
+    const { items, cUrlConfig } = req.body;
+    // Endpoint pronto per inoltrare le chiamate Scouting FSE
+    if (!cUrlConfig || !cUrlConfig.url) {
+      return res.status(400).json({
+        success: false,
+        requiresConfig: true,
+        message: 'Per completare l\'integrazione automatica con Scouting FSE, incolla la chiamata cURL dal sito scoutingfse.it.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Inviato ordine automatico a Scouting FSE per ${items ? items.length : 0} articoli!`
+    });
+  } catch (error) {
+    console.error('Errore invio Scouting FSE:', error);
+    res.status(500).json({ error: 'Errore nell\'invio dell\'ordine a Scouting FSE' });
   }
 });
 

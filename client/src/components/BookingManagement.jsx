@@ -186,80 +186,309 @@ export default function BookingManagement() {
         <BookingDetails 
           bookingId={selectedBooking}
           onClose={() => setSelectedBooking(null)}
+          onBookingUpdated={fetchBookings}
         />
       )}
     </div>
   )
 }
 
-function BookingDetails({ bookingId, onClose }) {
+function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
   const [booking, setBooking] = useState(null)
+  const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    nome_prenotante: '',
+    email_prenotante: '',
+    branca_riferimento: '',
+    note: '',
+    stato: 'attiva',
+    items: []
+  })
+  const [selectedAddProductId, setSelectedAddProductId] = useState('')
+
+  const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
+  const statuses = ['attiva', 'confermata', 'ritirata', 'annullata']
 
   useEffect(() => {
-    const fetchDetails = async () => {
-      try {
-        const response = await axios.get(`/api/admin/prenotazioni/${bookingId}`)
-        setBooking(response.data)
-        setLoading(false)
-      } catch (error) {
-        console.error('Errore:', error)
-        setLoading(false)
-      }
-    }
     fetchDetails()
+    fetchProducts()
   }, [bookingId])
+
+  const fetchDetails = async () => {
+    try {
+      const response = await axios.get(`/api/admin/prenotazioni/${bookingId}`)
+      setBooking(response.data)
+      setEditForm({
+        nome_prenotante: response.data.nome_prenotante,
+        email_prenotante: response.data.email_prenotante,
+        branca_riferimento: response.data.branca_riferimento || '',
+        note: response.data.note || '',
+        stato: response.data.stato || 'attiva',
+        items: response.data.items.map(item => ({
+          prodotto_id: item.prodotto_id,
+          nome: item.nome,
+          quantita: item.quantita,
+          prezzo_unitario: item.prezzo_unitario,
+          specialita: item.specialita || null
+        }))
+      })
+      setLoading(false)
+    } catch (error) {
+      console.error('Errore:', error)
+      setLoading(false)
+    }
+  }
+
+  const fetchProducts = async () => {
+    try {
+      const response = await axios.get('/api/prodotti?admin=true')
+      setAllProducts(response.data)
+    } catch (error) {
+      console.error('Errore prodotti:', error)
+    }
+  }
+
+  const handleItemQtyChange = (index, newQty) => {
+    const qty = Math.max(1, parseInt(newQty) || 1)
+    setEditForm(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => i === index ? { ...item, quantita: qty } : item)
+    }))
+  }
+
+  const handleRemoveItem = (index) => {
+    setEditForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleAddProductToBooking = () => {
+    if (!selectedAddProductId) return
+    const prod = allProducts.find(p => p.id === Number(selectedAddProductId))
+    if (!prod) return
+
+    setEditForm(prev => {
+      const exists = prev.items.find(i => i.prodotto_id === prod.id)
+      if (exists) {
+        return {
+          ...prev,
+          items: prev.items.map(i => i.prodotto_id === prod.id ? { ...i, quantita: i.quantita + 1 } : i)
+        }
+      }
+      return {
+        ...prev,
+        items: [...prev.items, {
+          prodotto_id: prod.id,
+          nome: `${prod.nome}${prod.taglia ? ` - ${prod.taglia}` : ''}`,
+          quantita: 1,
+          prezzo_unitario: prod.prezzo,
+          specialita: null
+        }]
+      }
+    })
+    setSelectedAddProductId('')
+  }
+
+  const handleSaveBooking = async () => {
+    try {
+      await axios.put(`/api/admin/prenotazioni/${bookingId}`, editForm)
+      setIsEditing(false)
+      fetchDetails()
+      if (onBookingUpdated) onBookingUpdated()
+    } catch (error) {
+      console.error('Errore salvataggio prenotazione:', error)
+      alert('Errore salvataggio: ' + (error.response?.data?.error || error.message))
+    }
+  }
 
   if (loading) return <div className="modal-overlay"><div className="modal">Caricamento...</div></div>
   if (!booking) return null
 
-  const total = booking.items.reduce((sum, item) => sum + (item.quantita * item.prezzo_unitario), 0)
+  const currentItems = isEditing ? editForm.items : booking.items
+  const total = currentItems.reduce((sum, item) => sum + (item.quantita * item.prezzo_unitario), 0)
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Dettagli Prenotazione</h3>
-          <button className="btn-close" onClick={onClose}>✕</button>
+          <h3>{isEditing ? '✏️ Modifica Prenotazione' : '👁️ Dettagli Prenotazione'}</h3>
+          <div className="modal-header-actions">
+            {!isEditing ? (
+              <button type="button" className="btn-small btn-edit" onClick={() => setIsEditing(true)}>
+                ✏️ Modifica
+              </button>
+            ) : (
+              <button type="button" className="btn-small btn-secondary" onClick={() => setIsEditing(false)}>
+                Annulla
+              </button>
+            )}
+            <button className="btn-close" onClick={onClose}>✕</button>
+          </div>
         </div>
         
         <div className="modal-content">
-          <div className="detail-section">
-            <h4>Informazioni Prenotante</h4>
-            <p><strong>Nome:</strong> {booking.nome_prenotante}</p>
-            <p><strong>Email:</strong> {booking.email_prenotante}</p>
-            <p><strong>Branca di riferimento:</strong> {booking.branca_riferimento || '-'}</p>
-            <p><strong>Data:</strong> {new Date(booking.data_prenotazione).toLocaleString('it-IT')}</p>
-            {booking.note && <p><strong>Note:</strong> {booking.note}</p>}
-          </div>
+          {!isEditing ? (
+            <>
+              <div className="detail-section">
+                <h4>Informazioni Prenotante</h4>
+                <p><strong>Nome:</strong> {booking.nome_prenotante}</p>
+                <p><strong>Email:</strong> {booking.email_prenotante}</p>
+                <p><strong>Branca di riferimento:</strong> {booking.branca_riferimento || '-'}</p>
+                <p><strong>Stato:</strong> <span className={`status-badge status-${booking.stato}`}>{booking.stato}</span></p>
+                <p><strong>Data:</strong> {new Date(booking.data_prenotazione).toLocaleString('it-IT')}</p>
+                {booking.note && <p><strong>Note:</strong> {booking.note}</p>}
+              </div>
 
-          <div className="detail-section">
-            <h4>Articoli Prenotati</h4>
-            <table className="detail-table">
-              <thead>
-                <tr>
-                  <th>Prodotto</th>
-                  <th>Quantità</th>
-                  <th>Prezzo Unit.</th>
-                  <th>Totale</th>
-                </tr>
-              </thead>
-              <tbody>
-                {booking.items.map((item, idx) => (
-                  <tr key={idx}>
-                    <td>{item.nome}</td>
-                    <td>{item.quantita}</td>
-                    <td>€ {item.prezzo_unitario.toFixed(2)}</td>
-                    <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
-                  </tr>
-                ))}
-                <tr className="total-row">
-                  <td colSpan="3"><strong>Totale:</strong></td>
-                  <td><strong>€ {total.toFixed(2)}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+              <div className="detail-section">
+                <h4>Articoli Prenotati</h4>
+                <table className="detail-table">
+                  <thead>
+                    <tr>
+                      <th>Prodotto</th>
+                      <th>Quantità</th>
+                      <th>Prezzo Unit.</th>
+                      <th>Totale</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {booking.items.map((item, idx) => (
+                      <tr key={idx}>
+                        <td>{item.nome}</td>
+                        <td>{item.quantita}</td>
+                        <td>€ {item.prezzo_unitario.toFixed(2)}</td>
+                        <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                    <tr className="total-row">
+                      <td colSpan="3"><strong>Totale:</strong></td>
+                      <td><strong>€ {total.toFixed(2)}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="edit-booking-form">
+              <div className="form-group-grid">
+                <div className="form-group">
+                  <label>Nome Prenotante:</label>
+                  <input
+                    type="text"
+                    value={editForm.nome_prenotante}
+                    onChange={(e) => setEditForm({ ...editForm, nome_prenotante: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Email Prenotante:</label>
+                  <input
+                    type="email"
+                    value={editForm.email_prenotante}
+                    onChange={(e) => setEditForm({ ...editForm, email_prenotante: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Branca di riferimento:</label>
+                  <select
+                    value={editForm.branca_riferimento}
+                    onChange={(e) => setEditForm({ ...editForm, branca_riferimento: e.target.value })}
+                  >
+                    {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Stato Prenotazione:</label>
+                  <select
+                    value={editForm.stato}
+                    onChange={(e) => setEditForm({ ...editForm, stato: e.target.value })}
+                  >
+                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label>Note:</label>
+                <textarea
+                  rows="2"
+                  value={editForm.note}
+                  onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                />
+              </div>
+
+              <div className="detail-section">
+                <h4>Articoli in Prenotazione</h4>
+                <table className="detail-table edit-items-table">
+                  <thead>
+                    <tr>
+                      <th>Prodotto</th>
+                      <th>Quantità</th>
+                      <th>Prezzo Unit.</th>
+                      <th>Totale</th>
+                      <th>Azione</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {editForm.items.map((item, idx) => (
+                      <tr key={idx}>
+                        <td>{item.nome}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="1"
+                            className="qty-edit-input"
+                            value={item.quantita}
+                            onChange={(e) => handleItemQtyChange(idx, e.target.value)}
+                          />
+                        </td>
+                        <td>€ {item.prezzo_unitario.toFixed(2)}</td>
+                        <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-small btn-delete"
+                            onClick={() => handleRemoveItem(idx)}
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="add-item-to-booking">
+                  <select
+                    value={selectedAddProductId}
+                    onChange={(e) => setSelectedAddProductId(e.target.value)}
+                  >
+                    <option value="">Aggiungi un altro articolo dal catalogo...</option>
+                    {allProducts.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome} {p.taglia ? `(${p.taglia})` : ''} - € {p.prezzo.toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-small btn-primary"
+                    disabled={!selectedAddProductId}
+                    onClick={handleAddProductToBooking}
+                  >
+                    + Aggiungi
+                  </button>
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-primary" onClick={handleSaveBooking}>
+                  💾 Salva Modifiche Prenotazione
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
