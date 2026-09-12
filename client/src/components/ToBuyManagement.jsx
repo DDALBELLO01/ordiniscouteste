@@ -14,15 +14,18 @@ export default function ToBuyManagement() {
   const [curlText, setCurlText] = useState('')
   const [browserScriptModalOpen, setBrowserScriptModalOpen] = useState(false)
   const [scriptCopied, setScriptCopied] = useState(false)
+  const [filterView, setFilterView] = useState('richiesti') // 'richiesti' | 'tutti_esauriti'
 
   useEffect(() => {
-    fetchItemsToBuy()
+    fetchItemsToBuy(filterView)
     fetchConfigStatus()
-  }, [])
+  }, [filterView])
 
-  const fetchItemsToBuy = async () => {
+  const fetchItemsToBuy = async (viewMode = filterView) => {
     try {
-      const response = await axios.get('/api/admin/da-acquistare')
+      setLoading(true)
+      const soloRichiesti = viewMode === 'richiesti'
+      const response = await axios.get(`/api/admin/da-acquistare?soloRichiesti=${soloRichiesti}`)
       setItemsToBuy(response.data)
       setLoading(false)
     } catch (error) {
@@ -233,23 +236,44 @@ export default function ToBuyManagement() {
       </div>
 
       <div className="tobuy-info-banner">
-        <p style={{ margin: 0 }}>
-          Questa lista mostra automaticamente tutti gli <strong>articoli nuovi (non usati)</strong> con <strong>giacenza esaurita (0)</strong> o richiesti nelle prenotazioni attive.
-        </p>
-        {configStatus && (
-          <div style={{ marginTop: '8px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {configStatus.configured && (
-              <span style={{ color: '#276749' }}>
-                <strong>✅ Sessione cURL Configurata ({new Date(configStatus.updated_at).toLocaleDateString('it-IT')})</strong>
-              </span>
-            )}
-            {configStatus.autoAuth && (
-              <span style={{ color: '#2b6cb0' }}>
-                <strong>🔑 Credenziali Automatiche ({configStatus.email})</strong>
-              </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
+          <div>
+            <p style={{ margin: 0 }}>
+              {filterView === 'richiesti'
+                ? 'Visualizzazione filtrata: mostra solo gli articoli con richieste attive nelle prenotazioni dei clienti.'
+                : 'Visualizzazione completa: mostra tutti gli articoli nuovi con giacenza esaurita (0) in magazzino.'
+              }
+            </p>
+            {configStatus && (
+              <div style={{ marginTop: '6px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {configStatus.configured && (
+                  <span style={{ color: '#276749' }}>
+                    <strong>✅ Sessione cURL Configurata ({new Date(configStatus.updated_at).toLocaleDateString('it-IT')})</strong>
+                  </span>
+                )}
+                {configStatus.autoAuth && (
+                  <span style={{ color: '#2b6cb0' }}>
+                    <strong>🔑 Credenziali Automatiche ({configStatus.email})</strong>
+                  </span>
+                )}
+              </div>
             )}
           </div>
-        )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e0' }}>
+            <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#2d3748', margin: 0 }}>
+              Filtro Vista:
+            </label>
+            <select
+              value={filterView}
+              onChange={(e) => setFilterView(e.target.value)}
+              style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e0', fontSize: '13px', background: 'white' }}
+            >
+              <option value="richiesti">📋 Solo richiesti dai clienti</option>
+              <option value="tutti_esauriti">🏬 Tutti con giacenza 0</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {orderResults && (

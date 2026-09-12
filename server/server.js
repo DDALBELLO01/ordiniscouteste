@@ -368,8 +368,9 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
 app.get('/api/admin/da-acquistare', async (req, res) => {
   try {
     const db = getDatabase();
-    // Seleziona articoli nuovi con giacenza 0 o con richieste nelle prenotazioni attive
-    const prodotti = await db.all(`
+    const soloRichiesti = req.query.soloRichiesti === 'true';
+
+    let query = `
       SELECT p.*,
         COALESCE((
           SELECT SUM(dp.quantita)
@@ -379,6 +380,19 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
         ), 0) as quantita_prenotata
       FROM prodotti p
       WHERE (p.usato = 0 OR p.usato IS NULL)
+    `;
+
+    if (soloRichiesti) {
+      query += `
+        AND COALESCE((
+          SELECT SUM(dp.quantita)
+          FROM dettagli_prenotazioni dp
+          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+        ), 0) > 0
+      `;
+    } else {
+      query += `
         AND (
           p.quantita_magazzino = 0 
           OR p.quantita_magazzino < 0
@@ -389,9 +403,12 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
             WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
           ), 0) > COALESCE(p.quantita_magazzino, 999999)
         )
-      ORDER BY p.branca, p.nome
-    `);
+      `;
+    }
 
+    query += ` ORDER BY p.branca, p.nome`;
+
+    const prodotti = await db.all(query);
     res.json(prodotti);
   } catch (error) {
     console.error('Errore recupero lista da acquistare:', error);
