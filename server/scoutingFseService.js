@@ -1,48 +1,120 @@
 import axios from 'axios';
+import fs from 'fs';
 
 /**
- * Automates login on Scouting FSE and returns active session cookies
+ * Automates login on Scouting FSE using puppeteer-core / system browser and adds items directly
  */
-export async function loginToScoutingFse(email, password) {
-  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
+export async function orderViaPuppeteerBrowser(email, password, items) {
+  const possiblePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium'
+  ];
 
-  // 1. Fetch login page to get initial cookies & CSRF token
-  const pageRes = await axios.get('https://www.scoutingfse.it/login.html', {
-    headers: { 'User-Agent': userAgent }
-  });
-
-  const initCookies = pageRes.headers['set-cookie']
-    ? pageRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ')
-    : '';
-
-  const tokenMatch = pageRes.data.match(/name="token"\s+value="([^"]+)"/i);
-  const csrfToken = tokenMatch ? tokenMatch[1] : '';
-
-  // 2. Submit login form
-  const params = new URLSearchParams();
-  if (csrfToken) params.append('token', csrfToken);
-  params.append('username', email);
-  params.append('password', password);
-
-  const loginRes = await axios.post('https://www.scoutingfse.it/login.html?mod=login', params.toString(), {
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': userAgent,
-      'Origin': 'https://www.scoutingfse.it',
-      'Referer': 'https://www.scoutingfse.it/login.html',
-      'Cookie': initCookies
-    },
-    maxRedirects: 0,
-    validateStatus: s => s >= 200 && s < 400
-  });
-
-  let sessionCookies = initCookies;
-  if (loginRes.headers['set-cookie']) {
-    const newCookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
-    sessionCookies = `${sessionCookies}; ${newCookies}`;
+  let execPath = possiblePaths.find(p => fs.existsSync(p));
+  if (!execPath) {
+    throw new Error('Nessun browser Chrome o Edge trovato sul server.');
   }
 
-  return sessionCookies;
+  const puppeteer = await import('puppeteer-core');
+  const browser = await puppeteer.default.launch({
+    executablePath: execPath,
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36');
+
+    // 1. Perform Login
+    await page.goto('https://www.scoutingfse.it/login.html', { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.type('#username', email);
+    await page.type('input[type="password"]', password);
+    await new Promise(r => setTimeout(r, 2000));
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null),
+      page.click('form[name="login"] button[type="submit"]')
+    ]);
+
+    const results = [];
+
+    // 2. Add each item to cart directly within the browser context
+    for (const item of items) {
+      const qty = Number(item.quantita_prenotata) > 0 ? Number(item.quantita_prenotata) : 1;
+      let idProdotto = item.scouting_id_prodotto || item.id_prodotto;
+      let caratteristica0 = item.scouting_caratteristica_id;
+
+      if (!idProdotto && item.immagine) {
+        const match = item.immagine.match(/(\d{3,6})/);
+        if (match) idProdotto = match[1];
+      }
+
+      if (!idProdotto) {
+        results.push({
+          item: item.nome,
+          status: 'error',
+          message: 'ID prodotto Scouting FSE mancante per questo articolo.'
+        });
+        continue;
+      }
+
+      const res = await page.evaluate(async (idProd, qtyNum, caratt) => {
+        try {
+          const url = `https://www.scoutingfse.it/buy.html?mod=caratteristica&id_prodotto=${idProd}&mod1=insert`;
+          const params = new URLSearchParams();
+          params.append('qty', qtyNum.toString());
+          if (caratt) params.append('caratteristica0', caratt.toString());
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: params.toString()
+          });
+
+          return { ok: response.ok, status: response.status };
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+      }, idProdotto, qty, caratteristica0);
+
+      if (res && res.ok) {
+        results.push({
+          item: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
+          qty,
+          status: 'success',
+          statusCode: res.status,
+          message: 'Aggiunto con successo al carrello Scouting FSE!'
+        });
+      } else {
+        results.push({
+          item: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
+          qty,
+          status: 'error',
+          message: res?.error || `Errore inserimento (HTTP ${res?.status || 'desconocido'})`
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    return {
+      success: true,
+      total: items.length,
+      successfulCount: results.filter(r => r.status === 'success').length,
+      results
+    };
+  } finally {
+    await browser.close();
+  }
 }
 
 /**
@@ -142,6 +214,18 @@ function isCloudflareResponse(data) {
  * Uses rawCurl cookies if provided; falls back to automatic login if no cURL is present.
  */
 export async function sendOrderToScoutingFse(rawCurl, items) {
+  // Filter items to only process requested items (quantita_prenotata > 0)
+  const requestedItems = items.filter(item => (Number(item.quantita_prenotata) || 0) > 0);
+
+  if (requestedItems.length === 0) {
+    return {
+      success: true,
+      total: 0,
+      successfulCount: 0,
+      results: []
+    };
+  }
+
   let sessionCookies = '';
   let parsedHeaders = {};
   let sampleIdProdotto = null;
@@ -157,19 +241,16 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     }
   }
 
-  // If no cURL session cookies are available, attempt automatic login with env credentials
-  if (!sessionCookies) {
-    const email = process.env.SCOUTING_FSE_EMAIL;
-    const password = process.env.SCOUTING_FSE_PASSWORD;
+  // Try Puppeteer headless browser order if credentials & local browser exist
+  const email = process.env.SCOUTING_FSE_EMAIL;
+  const password = process.env.SCOUTING_FSE_PASSWORD;
 
-    if (email && password) {
-      try {
-        console.log('Autenticazione automatica su Scouting FSE...');
-        sessionCookies = await loginToScoutingFse(email, password);
-      } catch (err) {
-        console.error('Errore login automatico:', err.message);
-        throw new Error(`Login automatico bloccato dalla protezione Cloudflare di Scouting FSE (${err.message}). Incolla il comando cURL dal tuo browser per autorizzare la sessione.`);
-      }
+  if (email && password) {
+    try {
+      console.log('Esecuzione ordine in background via Puppeteer Headless Browser...');
+      return await orderViaPuppeteerBrowser(email, password, requestedItems);
+    } catch (puppetErr) {
+      console.warn('Avviso Puppeteer non riuscito, ricorso a cURL/sessione:', puppetErr.message);
     }
   }
 
@@ -190,18 +271,6 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     ...parsedHeaders,
     'Cookie': sessionCookies
   };
-
-  // Filter items to only process requested items (quantita_prenotata > 0)
-  const requestedItems = items.filter(item => (Number(item.quantita_prenotata) || 0) > 0);
-
-  if (requestedItems.length === 0) {
-    return {
-      success: true,
-      total: 0,
-      successfulCount: 0,
-      results: []
-    };
-  }
 
   for (let idx = 0; idx < requestedItems.length; idx++) {
     const item = requestedItems[idx];
