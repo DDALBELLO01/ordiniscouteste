@@ -1,6 +1,51 @@
 import axios from 'axios';
 
 /**
+ * Automates login on Scouting FSE and returns active session cookies
+ */
+export async function loginToScoutingFse(email, password) {
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
+
+  // 1. Fetch login page to get initial cookies & CSRF token
+  const pageRes = await axios.get('https://www.scoutingfse.it/login.html', {
+    headers: { 'User-Agent': userAgent }
+  });
+
+  const initCookies = pageRes.headers['set-cookie']
+    ? pageRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ')
+    : '';
+
+  const tokenMatch = pageRes.data.match(/name="token"\s+value="([^"]+)"/i);
+  const csrfToken = tokenMatch ? tokenMatch[1] : '';
+
+  // 2. Submit login form
+  const params = new URLSearchParams();
+  if (csrfToken) params.append('token', csrfToken);
+  params.append('username', email);
+  params.append('password', password);
+
+  const loginRes = await axios.post('https://www.scoutingfse.it/login.html?mod=login', params.toString(), {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': userAgent,
+      'Origin': 'https://www.scoutingfse.it',
+      'Referer': 'https://www.scoutingfse.it/login.html',
+      'Cookie': initCookies
+    },
+    maxRedirects: 0,
+    validateStatus: s => s >= 200 && s < 400
+  });
+
+  let sessionCookies = initCookies;
+  if (loginRes.headers['set-cookie']) {
+    const newCookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
+    sessionCookies = `${sessionCookies}; ${newCookies}`;
+  }
+
+  return sessionCookies;
+}
+
+/**
  * Parses a raw cURL command (copied from browser DevTools, e.g. cmd, bash, or powershell)
  */
 export function parseCurlCommand(rawCurl) {
@@ -82,17 +127,47 @@ export function parseCurlCommand(rawCurl) {
 }
 
 /**
- * Executes add-to-cart requests on Scouting FSE for a list of items
+ * Executes add-to-cart requests on Scouting FSE for a list of items.
+ * If rawCurl is omitted or session expired, automatically logs in using env credentials.
  */
 export async function sendOrderToScoutingFse(rawCurl, items) {
-  const parsed = parseCurlCommand(rawCurl);
-  if (!parsed || (!parsed.url && !parsed.cookies)) {
-    throw new Error('Comando cURL non valido o sessione/cookie non trovati.');
+  let sessionCookies = '';
+  let parsedHeaders = {};
+  let sampleIdProdotto = null;
+  let sampleCaratteristica0 = null;
+
+  if (rawCurl) {
+    const parsed = parseCurlCommand(rawCurl);
+    if (parsed) {
+      sessionCookies = parsed.cookies;
+      parsedHeaders = parsed.headers || {};
+      sampleIdProdotto = parsed.sampleIdProdotto;
+      sampleCaratteristica0 = parsed.sampleCaratteristica0;
+    }
+  }
+
+  // If no cookies or credentials configured, perform automatic login
+  const email = process.env.SCOUTING_FSE_EMAIL;
+  const password = process.env.SCOUTING_FSE_PASSWORD;
+
+  if (email && password) {
+    try {
+      console.log('Autenticazione automatica su Scouting FSE...');
+      sessionCookies = await loginToScoutingFse(email, password);
+    } catch (err) {
+      console.error('Errore login automatico:', err.message);
+      if (!sessionCookies) {
+        throw new Error(`Login automatico fallito: ${err.message}`);
+      }
+    }
+  }
+
+  if (!sessionCookies) {
+    throw new Error('Impossibile autenticarsi su Scouting FSE: imposta SCOUTING_FSE_EMAIL e SCOUTING_FSE_PASSWORD o fornisci un cURL valido.');
   }
 
   const results = [];
   
-  // Set default request headers based on parsed cURL
   const reqHeaders = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
     'Accept': '*/*',
@@ -101,7 +176,8 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     'X-Requested-With': 'XMLHttpRequest',
     'Origin': 'https://www.scoutingfse.it',
     'Referer': 'https://www.scoutingfse.it/',
-    ...parsed.headers
+    ...parsedHeaders,
+    'Cookie': sessionCookies
   };
 
   for (const item of items) {
