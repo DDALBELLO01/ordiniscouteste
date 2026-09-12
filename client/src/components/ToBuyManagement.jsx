@@ -12,6 +12,8 @@ export default function ToBuyManagement() {
   const [toastMessage, setToastMessage] = useState(null)
   const [curlPromptOpen, setCurlPromptOpen] = useState(false)
   const [curlText, setCurlText] = useState('')
+  const [browserScriptModalOpen, setBrowserScriptModalOpen] = useState(false)
+  const [scriptCopied, setScriptCopied] = useState(false)
 
   useEffect(() => {
     fetchItemsToBuy()
@@ -56,6 +58,91 @@ export default function ToBuyManagement() {
 
   const showToast = (msg, type = 'info') => {
     setToastMessage({ msg, type })
+  }
+
+  const generateBrowserScript = () => {
+    const requestedItems = itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0)
+    const itemsJson = JSON.stringify(requestedItems.map(i => ({
+      nome: i.nome + (i.taglia ? ` (${i.taglia})` : ''),
+      qty: Number(i.quantita_prenotata) || 1,
+      scouting_id_prodotto: i.scouting_id_prodotto,
+      scouting_caratteristica_id: i.scouting_caratteristica_id,
+      immagine: i.immagine
+    })))
+
+    return `(async function() {
+  const items = ${itemsJson};
+  if (!items || items.length === 0) {
+    alert('Nessun articolo da acquistare!');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:20px;right:20px;z-index:999999;background:#1a365d;color:white;padding:20px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.5);font-family:sans-serif;max-width:380px;';
+  overlay.innerHTML = '<h3 style="margin:0 0 10px;font-size:16px;color:#63b3ed;">🏕️ Ordini Scout Auto-Cart</h3><div id="scout-status" style="font-size:14px;line-height:1.5;">Inizio aggiunta articoli al carrello...</div>';
+  document.body.appendChild(overlay);
+
+  const statusEl = document.getElementById('scout-status');
+  let added = 0;
+  let failed = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    statusEl.innerHTML = \`Aggiunta in corso (\${i+1}/\${items.length}):<br><strong>\${item.nome}</strong>\`;
+    
+    const qty = item.qty || 1;
+    let idProdotto = item.scouting_id_prodotto;
+    let caratteristica0 = item.scouting_caratteristica_id;
+
+    if (!idProdotto && item.immagine) {
+      const m = item.immagine.match(/(\\d{3,6})/);
+      if (m) idProdotto = m[1];
+    }
+
+    if (!idProdotto) {
+      failed++;
+      continue;
+    }
+
+    const url = \`https://www.scoutingfse.it/buy.html?mod=caratteristica&id_prodotto=\${idProdotto}&mod1=insert\`;
+    const params = new URLSearchParams();
+    params.append('qty', qty.toString());
+    if (caratteristica0) params.append('caratteristica0', caratteristica0.toString());
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: params.toString()
+      });
+
+      if (res.ok) {
+        added++;
+      } else {
+        failed++;
+      }
+    } catch (e) {
+      failed++;
+    }
+    
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  statusEl.innerHTML = \`<span style="color:#68d391;font-weight:bold;">✅ Completato! \${added} articoli aggiunti al carrello Scouting FSE.</span>\`;
+  setTimeout(() => {
+    window.location.href = 'https://www.scoutingfse.it/cart.html';
+  }, 1500);
+})();`
+  }
+
+  const handleCopyBrowserScript = () => {
+    const script = generateBrowserScript()
+    navigator.clipboard.writeText(script)
+    setScriptCopied(true)
+    setTimeout(() => setScriptCopied(false), 3000)
   }
 
   const handleSyncAvailability = async () => {
@@ -120,10 +207,12 @@ export default function ToBuyManagement() {
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
             type="button"
-            className="btn-secondary"
-            onClick={() => setCurlPromptOpen(true)}
+            className="btn-primary"
+            style={{ backgroundColor: '#2b6cb0', borderColor: '#2b6cb0' }}
+            onClick={() => setBrowserScriptModalOpen(true)}
+            disabled={itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0).length === 0}
           >
-            ⚙️ {configStatus?.configured ? 'cURL Sessione (Configurato)' : 'Incolla cURL'}
+            ⚡ Ordina dal Browser 1-Click (Consigliato)
           </button>
           <button
             type="button"
@@ -131,15 +220,14 @@ export default function ToBuyManagement() {
             onClick={handleSyncAvailability}
             disabled={syncingStock}
           >
-            {syncingStock ? '⏳ Verifica in corso...' : '🔄 Sincronizza Disponibilità Scouting FSE'}
+            {syncingStock ? '⏳ Verifica in corso...' : '🔄 Sincronizza Disponibilità'}
           </button>
           <button
             type="button"
-            className="btn-primary btn-scouting-order"
-            onClick={handleOrderAllScoutingFse}
-            disabled={ordering || itemsToBuy.length === 0}
+            className="btn-secondary"
+            onClick={() => setCurlPromptOpen(true)}
           >
-            {ordering ? '⏳ Invio in corso...' : '🚀 Ordina / Aggiungi tutti su Scouting FSE (1-Click)'}
+            ⚙️ cURL / Server Cloud
           </button>
         </div>
       </div>
@@ -238,6 +326,59 @@ export default function ToBuyManagement() {
           </tbody>
         </table>
       </div>
+
+      {browserScriptModalOpen && (
+        <div className="modal-overlay" onClick={() => setBrowserScriptModalOpen(false)}>
+          <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚡ Ordine Automatico 1-Click dal Browser</h3>
+              <button type="button" className="btn-close" onClick={() => setBrowserScriptModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-content" style={{ fontSize: '14px', lineHeight: '1.6' }}>
+              <div style={{ background: '#ebf8ff', border: '1px solid #bee3f8', padding: '12px 16px', borderRadius: '6px', color: '#2b6cb0', marginBottom: '15px' }}>
+                <p style={{ margin: 0 }}>
+                  <strong>🔒 Perché dal Browser?</strong> Scouting FSE utilizza la protezione Anti-Bot Cloudflare che blocca i server cloud. Eseguendo lo script direttamente nel tuo browser sul sito Scouting FSE, l'ordine verrà inviato con successo usando il tuo indirizzo IP e la tua sessione autenticata!
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <h4 style={{ margin: '0 0 10px', color: '#1a365d' }}>📌 Metodo 1: Copia Script (Consigliato)</h4>
+                <ol style={{ paddingLeft: '20px', margin: '0 0 15px' }}>
+                  <li>Clicca sul pulsante qui sotto per copiare lo script contenente i <strong>{itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0).length} articoli richiesti</strong>.</li>
+                  <li>Apri una scheda su <a href="https://www.scoutingfse.it" target="_blank" rel="noreferrer" style={{ fontWeight: 'bold', color: '#2b6cb0' }}>scoutingfse.it</a> (dove sei collegato col tuo account).</li>
+                  <li>Premi <strong>F12</strong> (o Tasto Destro ➔ Ispeziona), vai nella scheda <strong>Console</strong>, incolla (Ctrl + V) e premi <strong>Invio</strong>.</li>
+                </ol>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={handleCopyBrowserScript}
+                  style={{ fontSize: '15px', padding: '10px 18px' }}
+                >
+                  {scriptCopied ? '✅ Script Copiato negli Appunti!' : '📋 Copia Script Ordine 1-Click'}
+                </button>
+              </div>
+
+              <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '20px 0' }} />
+
+              <div>
+                <h4 style={{ margin: '0 0 10px', color: '#1a365d' }}>🔖 Metodo 2: Preferito / Bookmarklet</h4>
+                <p style={{ margin: '0 0 10px' }}>
+                  Trascina questo pulsante nella tua barra dei <strong>Preferiti</strong> del browser. Quando sei su <a href="https://www.scoutingfse.it" target="_blank" rel="noreferrer">scoutingfse.it</a>, ti basterà cliccare sul preferito!
+                </p>
+                <a
+                  href={`javascript:${encodeURIComponent(generateBrowserScript())}`}
+                  className="btn-primary"
+                  onClick={(e) => e.preventDefault()}
+                  style={{ display: 'inline-block', backgroundColor: '#319795', borderColor: '#319795', cursor: 'grab' }}
+                  title="Trascina questo pulsante nella barra dei preferiti"
+                >
+                  🛒 Ordina su Scouting FSE
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {curlPromptOpen && (
         <div className="modal-overlay" onClick={() => setCurlPromptOpen(false)}>
