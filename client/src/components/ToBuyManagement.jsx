@@ -63,8 +63,13 @@ export default function ToBuyManagement() {
     setToastMessage({ msg, type })
   }
 
-  const generateBrowserScript = () => {
+  const handleOpenScoutingFseAndOrder = () => {
     const requestedItems = itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0)
+    if (requestedItems.length === 0) {
+      showToast('Nessun articolo ha richieste attive nelle prenotazioni da ordinare!', 'warning')
+      return
+    }
+
     const itemsJson = JSON.stringify(requestedItems.map(i => ({
       nome: i.nome + (i.taglia ? ` (${i.taglia})` : ''),
       qty: Number(i.quantita_prenotata) || 1,
@@ -73,12 +78,9 @@ export default function ToBuyManagement() {
       immagine: i.immagine
     })))
 
-    return `(async function() {
+    const scriptCode = `(async function() {
   const items = ${itemsJson};
-  if (!items || items.length === 0) {
-    alert('Nessun articolo da acquistare!');
-    return;
-  }
+  if (!items || items.length === 0) return;
 
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:20px;right:20px;z-index:999999;background:#1a365d;color:white;padding:20px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.5);font-family:sans-serif;max-width:380px;';
@@ -91,7 +93,7 @@ export default function ToBuyManagement() {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    statusEl.innerHTML = \`Aggiunta in corso (\${i+1}/\${items.length}):<br><strong>\${item.nome}</strong>\`;
+    statusEl.innerHTML = 'Aggiunta in corso (' + (i+1) + '/' + items.length + '):<br><strong>' + item.nome + '</strong>';
     
     const qty = item.qty || 1;
     let idProdotto = item.scouting_id_prodotto;
@@ -107,7 +109,7 @@ export default function ToBuyManagement() {
       continue;
     }
 
-    const url = \`https://www.scoutingfse.it/buy.html?mod=caratteristica&id_prodotto=\${idProdotto}&mod1=insert\`;
+    const url = 'https://www.scoutingfse.it/buy.html?mod=caratteristica&id_prodotto=' + idProdotto + '&mod1=insert';
     const params = new URLSearchParams();
     params.append('qty', qty.toString());
     if (caratteristica0) params.append('caratteristica0', caratteristica0.toString());
@@ -134,18 +136,19 @@ export default function ToBuyManagement() {
     await new Promise(r => setTimeout(r, 250));
   }
 
-  statusEl.innerHTML = \`<span style="color:#68d391;font-weight:bold;">✅ Completato! \${added} articoli aggiunti al carrello Scouting FSE.</span>\`;
+  statusEl.innerHTML = '<span style="color:#68d391;font-weight:bold;">✅ Completato! ' + added + ' articoli aggiunti al carrello Scouting FSE.</span>';
   setTimeout(() => {
     window.location.href = 'https://www.scoutingfse.it/cart.html';
   }, 1500);
 })();`
-  }
 
-  const handleCopyBrowserScript = () => {
-    const script = generateBrowserScript()
-    navigator.clipboard.writeText(script)
-    setScriptCopied(true)
-    setTimeout(() => setScriptCopied(false), 3000)
+    // Copia lo script negli appunti
+    navigator.clipboard.writeText(scriptCode)
+
+    // Apri Scouting FSE in una nuova scheda
+    window.open('https://www.scoutingfse.it/login.html', '_blank')
+
+    showToast('🚀 Pagina di Scouting FSE aperta in una nuova scheda!\nLo script dell\'ordine è stato copiato negli appunti: Fai LOGIN su Scouting FSE, poi premi F12 -> Console -> Incolla (Ctrl+V) -> Invio.', 'success')
   }
 
   const handleSyncAvailability = async () => {
@@ -212,10 +215,10 @@ export default function ToBuyManagement() {
             type="button"
             className="btn-primary"
             style={{ backgroundColor: '#2b6cb0', borderColor: '#2b6cb0' }}
-            onClick={() => setBrowserScriptModalOpen(true)}
+            onClick={handleOpenScoutingFseAndOrder}
             disabled={itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0).length === 0}
           >
-            ⚡ Ordina dal Browser 1-Click (Consigliato)
+            🚀 Apri Scouting FSE e Aggiungi al Carrello (1-Click)
           </button>
           <button
             type="button"
