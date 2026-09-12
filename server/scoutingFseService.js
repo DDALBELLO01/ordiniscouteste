@@ -128,7 +128,7 @@ export function parseCurlCommand(rawCurl) {
 
 /**
  * Executes add-to-cart requests on Scouting FSE for a list of items.
- * If rawCurl is omitted or session expired, automatically logs in using env credentials.
+ * Uses rawCurl cookies if provided; falls back to automatic login if no cURL is present.
  */
 export async function sendOrderToScoutingFse(rawCurl, items) {
   let sessionCookies = '';
@@ -138,7 +138,7 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
 
   if (rawCurl) {
     const parsed = parseCurlCommand(rawCurl);
-    if (parsed) {
+    if (parsed && parsed.cookies) {
       sessionCookies = parsed.cookies;
       parsedHeaders = parsed.headers || {};
       sampleIdProdotto = parsed.sampleIdProdotto;
@@ -146,24 +146,24 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     }
   }
 
-  // If no cookies or credentials configured, perform automatic login
-  const email = process.env.SCOUTING_FSE_EMAIL;
-  const password = process.env.SCOUTING_FSE_PASSWORD;
+  // If no cURL session cookies are available, attempt automatic login with env credentials
+  if (!sessionCookies) {
+    const email = process.env.SCOUTING_FSE_EMAIL;
+    const password = process.env.SCOUTING_FSE_PASSWORD;
 
-  if (email && password) {
-    try {
-      console.log('Autenticazione automatica su Scouting FSE...');
-      sessionCookies = await loginToScoutingFse(email, password);
-    } catch (err) {
-      console.error('Errore login automatico:', err.message);
-      if (!sessionCookies) {
-        throw new Error(`Login automatico fallito: ${err.message}`);
+    if (email && password) {
+      try {
+        console.log('Autenticazione automatica su Scouting FSE...');
+        sessionCookies = await loginToScoutingFse(email, password);
+      } catch (err) {
+        console.error('Errore login automatico:', err.message);
+        throw new Error(`Login automatico bloccato dalla protezione Cloudflare di Scouting FSE (${err.message}). Incolla il comando cURL dal tuo browser per autorizzare la sessione.`);
       }
     }
   }
 
   if (!sessionCookies) {
-    throw new Error('Impossibile autenticarsi su Scouting FSE: imposta SCOUTING_FSE_EMAIL e SCOUTING_FSE_PASSWORD o fornisci un cURL valido.');
+    throw new Error('Impossibile autenticarsi su Scouting FSE: imposta SCOUTING_FSE_EMAIL e SCOUTING_FSE_PASSWORD o fornisci un comando cURL valido.');
   }
 
   const results = [];

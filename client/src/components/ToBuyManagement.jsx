@@ -10,6 +10,8 @@ export default function ToBuyManagement() {
   const [configStatus, setConfigStatus] = useState(null)
   const [orderResults, setOrderResults] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
+  const [curlPromptOpen, setCurlPromptOpen] = useState(false)
+  const [curlText, setCurlText] = useState('')
 
   useEffect(() => {
     fetchItemsToBuy()
@@ -31,8 +33,24 @@ export default function ToBuyManagement() {
     try {
       const response = await axios.get('/api/admin/scouting-fse/config')
       setConfigStatus(response.data)
+      if (response.data.rawCurl) {
+        setCurlText(response.data.rawCurl)
+      }
     } catch (error) {
       console.error('Errore configurazione Scouting FSE:', error)
+    }
+  }
+
+  const handleSaveConfig = async () => {
+    if (!curlText.trim()) return
+    try {
+      const response = await axios.post('/api/admin/scouting-fse/config', { rawCurl: curlText.trim() })
+      showToast('✅ ' + response.data.message, 'success')
+      setCurlPromptOpen(false)
+      fetchConfigStatus()
+    } catch (error) {
+      console.error('Errore salvataggio config:', error)
+      showToast('Errore salvataggio cURL: ' + (error.response?.data?.error || error.message), 'error')
     }
   }
 
@@ -74,14 +92,16 @@ export default function ToBuyManagement() {
       }))
 
       const response = await axios.post('/api/admin/scouting-fse/ordina-tutti', {
-        items: minimalItems
+        items: minimalItems,
+        rawCurl: curlText.trim() ? curlText.trim() : null
       })
 
       setOrderResults(response.data.details)
       showToast('🚀 ' + response.data.message, 'success')
     } catch (error) {
       console.error('Errore invio ordine Scouting FSE:', error)
-      showToast('Errore: ' + (error.response?.data?.error || error.message), 'error')
+      const errMessage = error.response?.data?.error || error.message
+      showToast('Errore: ' + errMessage, 'error')
     } finally {
       setOrdering(false)
     }
@@ -96,6 +116,13 @@ export default function ToBuyManagement() {
       <div className="management-header">
         <h3>🛒 Lista Articoli Nuovi da Acquistare ({itemsToBuy.length})</h3>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setCurlPromptOpen(true)}
+          >
+            ⚙️ {configStatus?.configured ? 'cURL Sessione (Configurato)' : 'Incolla cURL'}
+          </button>
           <button
             type="button"
             className="btn-secondary"
@@ -119,10 +146,19 @@ export default function ToBuyManagement() {
         <p style={{ margin: 0 }}>
           Questa lista mostra automaticamente tutti gli <strong>articoli nuovi (non usati)</strong> con <strong>giacenza esaurita (0)</strong> o richiesti nelle prenotazioni attive.
         </p>
-        {configStatus && configStatus.autoAuth && (
-          <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#276749' }}>
-            <strong>✅ Autenticazione Automatica Attiva ({configStatus.email})</strong> — Gli ordini verranno inseriti direttamente nel carrello Scouting FSE.
-          </p>
+        {configStatus && (
+          <div style={{ marginTop: '8px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {configStatus.configured && (
+              <span style={{ color: '#276749' }}>
+                <strong>✅ Sessione cURL Configurata ({new Date(configStatus.updated_at).toLocaleDateString('it-IT')})</strong>
+              </span>
+            )}
+            {configStatus.autoAuth && (
+              <span style={{ color: '#2b6cb0' }}>
+                <strong>🔑 Credenziali Automatiche ({configStatus.email})</strong>
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -200,6 +236,46 @@ export default function ToBuyManagement() {
           </tbody>
         </table>
       </div>
+
+      {curlPromptOpen && (
+        <div className="modal-overlay" onClick={() => setCurlPromptOpen(false)}>
+          <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>🔗 Configurazione cURL / Sessione Scouting FSE</h3>
+              <button type="button" className="btn-close" onClick={() => setCurlPromptOpen(false)}>✕</button>
+            </div>
+            <div className="modal-content">
+              <p style={{ fontSize: '14px', lineHeight: '1.5' }}>
+                Se la protezione Cloudflare di Scouting FSE blocca l'accesso automatico da server cloud (HTTP 403), incolla qui il comando <strong>cURL (cmd, bash o powershell)</strong> copiato dai Developer Tools F12 del browser (Network ➔ Tasto destro sulla richiesta ➔ Copy as cURL):
+              </p>
+              <textarea
+                rows="7"
+                style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e0' }}
+                value={curlText}
+                onChange={(e) => setCurlText(e.target.value)}
+                placeholder="curl --url 'https://www.scoutingfse.it/buy.html?mod=caratteristica...' -H 'Cookie: ...' --data-raw '...'"
+              />
+              <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setCurlPromptOpen(false)}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!curlText.trim()}
+                  onClick={() => handleSaveConfig()}
+                >
+                  💾 Salva cURL
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMessage && (
         <div className="modal-overlay" onClick={() => setToastMessage(null)}>
