@@ -245,7 +245,8 @@
   vertical-align: middle;
 }
 
-table {
+.products-table table,
+.bookings-table table {
   width: 100%;
   min-width: 720px;
   border-collapse: collapse;
@@ -302,8 +303,8 @@ table th.sortable-th:hover {
 }
 
 .modal-large {
-  max-width: 800px;
-  width: 95%;
+  max-width: 750px;
+  width: 100%;
 }
 
 .modal-header-actions {
@@ -320,11 +321,12 @@ table th.sortable-th:hover {
 }
 
 .qty-edit-input {
-  width: 60px;
+  width: 55px;
   padding: 4px 6px;
   border: 1px solid #cbd5e0;
   border-radius: 4px;
   text-align: center;
+  font-size: 13px;
 }
 
 .add-item-to-booking {
@@ -332,13 +334,21 @@ table th.sortable-th:hover {
   gap: 10px;
   margin-top: 14px;
   align-items: center;
+  width: 100%;
 }
 
 .add-item-to-booking select {
   flex: 1;
-  padding: 8px;
+  min-width: 0;
+  padding: 8px 10px;
   border: 1px solid #cbd5e0;
   border-radius: 4px;
+  font-size: 13px;
+}
+
+.add-item-to-booking button {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .modal-actions {
@@ -514,6 +524,7 @@ table tbody tr:hover {
 
 .detail-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
   margin-top: 10px;
 }
@@ -524,10 +535,32 @@ table tbody tr:hover {
 
 .detail-table th,
 .detail-table td {
-  padding: 8px;
+  padding: 8px 10px;
   text-align: left;
   border-bottom: 1px solid #e2e8f0;
   font-size: 13px;
+  word-break: break-word;
+}
+
+.edit-items-table th:nth-child(2),
+.edit-items-table td:nth-child(2) {
+  text-align: center;
+  width: 80px;
+}
+
+.edit-items-table th:nth-child(3),
+.edit-items-table td:nth-child(3),
+.edit-items-table th:nth-child(4),
+.edit-items-table td:nth-child(4) {
+  text-align: right;
+  width: 90px;
+  white-space: nowrap;
+}
+
+.edit-items-table th:nth-child(5),
+.edit-items-table td:nth-child(5) {
+  text-align: center;
+  width: 60px;
 }
 
 .detail-table .total-row {

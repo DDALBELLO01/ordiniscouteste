@@ -422,44 +422,54 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
 
               <div className="detail-section">
                 <h4>Articoli in Prenotazione</h4>
-                <table className="detail-table edit-items-table">
-                  <thead>
-                    <tr>
-                      <th>Prodotto</th>
-                      <th>Quantità</th>
-                      <th>Prezzo Unit.</th>
-                      <th>Totale</th>
-                      <th>Azione</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {editForm.items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td>{item.nome}</td>
-                        <td>
-                          <input
-                            type="number"
-                            min="1"
-                            className="qty-edit-input"
-                            value={item.quantita}
-                            onChange={(e) => handleItemQtyChange(idx, e.target.value)}
-                          />
-                        </td>
-                        <td>€ {item.prezzo_unitario.toFixed(2)}</td>
-                        <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="btn-small btn-delete"
-                            onClick={() => handleRemoveItem(idx)}
-                          >
-                            🗑️
-                          </button>
-                        </td>
+                <div style={{ overflowX: 'auto', width: '100%', marginBottom: '10px' }}>
+                  <table className="detail-table edit-items-table">
+                    <thead>
+                      <tr>
+                        <th>Prodotto</th>
+                        <th>Quantità</th>
+                        <th>Prezzo Unit.</th>
+                        <th>Totale</th>
+                        <th>Azione</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {editForm.items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td><strong>{item.nome}</strong></td>
+                          <td>
+                            <input
+                              type="number"
+                              min="1"
+                              className="qty-edit-input"
+                              value={item.quantita}
+                              onChange={(e) => handleItemQtyChange(idx, e.target.value)}
+                            />
+                          </td>
+                          <td>€ {item.prezzo_unitario.toFixed(2)}</td>
+                          <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-small btn-delete"
+                              title="Rimuovi articolo"
+                              onClick={() => handleRemoveItem(idx)}
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {editForm.items.length === 0 && (
+                        <tr>
+                          <td colSpan="5" style={{ textAlign: 'center', color: '#718096', padding: '15px' }}>
+                            Nessun articolo in prenotazione. Aggiungine uno dal menu sottostante.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
                 <div className="add-item-to-booking">
                   <select
