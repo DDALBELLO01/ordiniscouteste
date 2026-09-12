@@ -20,6 +20,8 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
+// CORS aperto per l'endpoint pubblico usato dal bookmarklet eseguito su scoutingfse.it
+app.use('/api/public', cors({ origin: '*' }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
@@ -361,6 +363,35 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
   } catch (error) {
     console.error('Errore modifica prenotazione:', error);
     res.status(500).json({ error: 'Errore modifica prenotazione' });
+  }
+});
+
+// ENDPOINT PUBBLICO (usato dal bookmarklet eseguito sul dominio scoutingfse.it)
+app.get('/api/public/scouting-fse/pending-items', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const prodotti = await db.all(`
+      SELECT p.id, p.nome, p.taglia, p.immagine, p.scouting_id_prodotto, p.scouting_caratteristica_id,
+        COALESCE((
+          SELECT SUM(dp.quantita)
+          FROM dettagli_prenotazioni dp
+          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+        ), 0) as quantita_prenotata
+      FROM prodotti p
+      WHERE (p.usato = 0 OR p.usato IS NULL)
+        AND COALESCE((
+          SELECT SUM(dp.quantita)
+          FROM dettagli_prenotazioni dp
+          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+        ), 0) > 0
+      ORDER BY p.branca, p.nome
+    `);
+    res.json(prodotti);
+  } catch (error) {
+    console.error('Errore recupero articoli pendenti pubblici:', error);
+    res.status(500).json({ error: 'Errore recupero articoli pendenti' });
   }
 });
 
