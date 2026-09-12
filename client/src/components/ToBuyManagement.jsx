@@ -6,6 +6,7 @@ export default function ToBuyManagement() {
   const [itemsToBuy, setItemsToBuy] = useState([])
   const [loading, setLoading] = useState(true)
   const [ordering, setOrdering] = useState(false)
+  const [syncingStock, setSyncingStock] = useState(false)
   const [configStatus, setConfigStatus] = useState(null)
   const [orderResults, setOrderResults] = useState(null)
 
@@ -31,6 +32,20 @@ export default function ToBuyManagement() {
       setConfigStatus(response.data)
     } catch (error) {
       console.error('Errore configurazione Scouting FSE:', error)
+    }
+  }
+
+  const handleSyncAvailability = async () => {
+    setSyncingStock(true)
+    try {
+      const response = await axios.post('/api/admin/scouting-fse/sincronizza-disponibilita')
+      alert('🔄 ' + response.data.message)
+      fetchItemsToBuy()
+    } catch (error) {
+      console.error('Errore sincronizzazione disponibilità:', error)
+      alert('Errore: ' + (error.response?.data?.error || error.message))
+    } finally {
+      setSyncingStock(false)
     }
   }
 
@@ -65,14 +80,24 @@ export default function ToBuyManagement() {
     <div className="to-buy-management">
       <div className="management-header">
         <h3>🛒 Lista Articoli Nuovi da Acquistare ({itemsToBuy.length})</h3>
-        <button
-          type="button"
-          className="btn-primary btn-scouting-order"
-          onClick={handleOrderAllScoutingFse}
-          disabled={ordering || itemsToBuy.length === 0}
-        >
-          {ordering ? '⏳ Invio in corso...' : '🚀 Ordina / Aggiungi tutti su Scouting FSE (1-Click)'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleSyncAvailability}
+            disabled={syncingStock}
+          >
+            {syncingStock ? '⏳ Verifica in corso...' : '🔄 Sincronizza Disponibilità Scouting FSE'}
+          </button>
+          <button
+            type="button"
+            className="btn-primary btn-scouting-order"
+            onClick={handleOrderAllScoutingFse}
+            disabled={ordering || itemsToBuy.length === 0}
+          >
+            {ordering ? '⏳ Invio in corso...' : '🚀 Ordina / Aggiungi tutti su Scouting FSE (1-Click)'}
+          </button>
+        </div>
       </div>
 
       <div className="tobuy-info-banner">

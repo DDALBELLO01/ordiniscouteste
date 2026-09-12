@@ -72,6 +72,9 @@ export async function initializeDatabase() {
   if (!colonneProdotti.some(colonna => colonna.name === 'scouting_caratteristica_id')) {
     await db.run('ALTER TABLE prodotti ADD COLUMN scouting_caratteristica_id INTEGER');
   }
+  if (!colonneProdotti.some(colonna => colonna.name === 'esaurito_scouting')) {
+    await db.run('ALTER TABLE prodotti ADD COLUMN esaurito_scouting INTEGER DEFAULT 0');
+  }
 
   // Tabella Prenotazioni
   await db.exec(`
@@ -258,6 +261,7 @@ async function initializePostgresDatabase() {
     );
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_id_prodotto INTEGER;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_caratteristica_id INTEGER;
+    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS esaurito_scouting INTEGER DEFAULT 0;
   `);
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',

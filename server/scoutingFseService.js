@@ -240,3 +240,49 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     results
   };
 }
+
+/**
+ * Checks and synchronizes stock availability from Scouting FSE site for new products
+ */
+export async function syncScoutingFseStock(db) {
+  const prodotti = await db.all("SELECT id, nome, scouting_id_prodotto, immagine, esaurito_scouting FROM prodotti WHERE usato = 0 OR usato IS NULL");
+  let checkedCount = 0;
+  let updatedCount = 0;
+
+  for (const p of prodotti) {
+    let idProdotto = p.scouting_id_prodotto;
+    if (!idProdotto && p.immagine) {
+      const match = p.immagine.match(/product_(\d+)_/i);
+      if (match) idProdotto = match[1];
+    }
+    if (!idProdotto) continue;
+
+    checkedCount++;
+    try {
+      const pageUrl = `https://www.scoutingfse.it/buy.html?mod=caratteristica&id_prodotto=${idProdotto}`;
+      const res = await axios.get(pageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'
+        },
+        timeout: 6000
+      });
+
+      const isOut = /esaurito|non\s+disponibile|non_disponibile/i.test(res.data);
+      const newStatus = isOut ? 1 : 0;
+
+      if (p.esaurito_scouting !== newStatus) {
+        await db.run("UPDATE prodotti SET esaurito_scouting = ? WHERE id = ?", [newStatus, p.id]);
+        updatedCount++;
+      }
+    } catch (err) {
+      if (err.response?.status === 404) {
+        if (p.esaurito_scouting !== 1) {
+          await db.run("UPDATE prodotti SET esaurito_scouting = 1 WHERE id = ?", [p.id]);
+          updatedCount++;
+        }
+      }
+    }
+  }
+
+  return { checkedCount, updatedCount };
+}

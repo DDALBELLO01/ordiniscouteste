@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification } from './emailService.js';
-import { sendOrderToScoutingFse, parseCurlCommand } from './scoutingFseService.js';
+import { sendOrderToScoutingFse, parseCurlCommand, syncScoutingFseStock } from './scoutingFseService.js';
 
 dotenv.config();
 
@@ -91,19 +91,27 @@ app.post('/api/prenotazioni', async (req, res) => {
         return res.status(404).json({ error: `Prodotto ${item.prodotto_id} non trovato` });
       }
 
-      // Se quantità_magazzino è NULL/undefined = illimitato (ok)
-      // Se quantità_magazzino è 0 = esaurito (errore)
-      // Se quantità_magazzino < quantità richiesta = errore
-      if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
-        if (prodotto.quantita_magazzino === 0) {
-          return res.status(400).json({ 
-            error: `${prodotto.nome} non è disponibile` 
-          });
-        }
-        if (item.quantita > prodotto.quantita_magazzino) {
-          return res.status(400).json({ 
-            error: `Quantità non sufficiente per ${prodotto.nome}. Disponibili: ${prodotto.quantita_magazzino}, Richiesti: ${item.quantita}` 
-          });
+      const isUsato = prodotto.usato === 1 || prodotto.usato === true;
+      const isEsauritoScouting = prodotto.esaurito_scouting === 1 || prodotto.esaurito_scouting === true;
+
+      if (isEsauritoScouting) {
+        return res.status(400).json({ error: `${prodotto.nome} è al momento esaurito su Scouting FSE` });
+      }
+
+      // Per gli articoli USATI verifica la quantità di magazzino
+      // Per gli articoli NUOVI l'ordine è sempre consentito (se non esaurito su Scouting FSE)
+      if (isUsato) {
+        if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
+          if (prodotto.quantita_magazzino <= 0) {
+            return res.status(400).json({ 
+              error: `${prodotto.nome} (Usato) non è più disponibile in magazzino` 
+            });
+          }
+          if (item.quantita > prodotto.quantita_magazzino) {
+            return res.status(400).json({ 
+              error: `Quantità usata non sufficiente per ${prodotto.nome}. Disponibili: ${prodotto.quantita_magazzino}` 
+            });
+          }
         }
       }
     }
@@ -448,6 +456,21 @@ app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
   } catch (error) {
     console.error('Errore invio Scouting FSE:', error);
     res.status(500).json({ error: error.message || 'Errore nell\'invio dell\'ordine a Scouting FSE' });
+  }
+});
+
+app.post('/api/admin/scouting-fse/sincronizza-disponibilita', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await syncScoutingFseStock(db);
+    res.json({
+      success: true,
+      message: `Sincronizzazione completata su ${result.checkedCount} articoli (${result.updatedCount} aggiornati).`,
+      result
+    });
+  } catch (error) {
+    console.error('Errore sincronizzazione disponibilità Scouting FSE:', error);
+    res.status(500).json({ error: 'Errore sincronizzazione disponibilità Scouting FSE' });
   }
 });
 

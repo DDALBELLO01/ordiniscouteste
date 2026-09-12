@@ -27,16 +27,24 @@ export default function ProductSelector({ products, onAddItem }) {
 
   const handleAdd = (product) => {
     const quantity = quantities[product.id] || 1
-    
-    // Verifica se la quantità richiesta è disponibile
-    if (product.quantita_magazzino !== null && product.quantita_magazzino !== undefined) {
-      if (product.quantita_magazzino === 0) {
-        alert('Articolo non disponibile')
-        return
-      }
-      if (quantity > product.quantita_magazzino) {
-        alert(`Quantità massima disponibile: ${product.quantita_magazzino}`)
-        return
+    const isUsato = product.usato === 1 || product.usato === true
+    const isOutScouting = product.esaurito_scouting === 1 || product.esaurito_scouting === true
+
+    if (isOutScouting) {
+      alert('Articolo al momento esaurito su Scouting FSE')
+      return
+    }
+
+    if (isUsato) {
+      if (product.quantita_magazzino !== null && product.quantita_magazzino !== undefined) {
+        if (product.quantita_magazzino <= 0) {
+          alert('Articolo usato non disponibile')
+          return
+        }
+        if (quantity > product.quantita_magazzino) {
+          alert(`Quantità usata massima disponibile: ${product.quantita_magazzino}`)
+          return
+        }
       }
     }
     
@@ -73,24 +81,26 @@ export default function ProductSelector({ products, onAddItem }) {
   const filteredProducts = useMemo(() => products.filter(product => {
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
     const isUsato = product.usato === 1 || product.usato === true
-    const isOut = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
-    if (isUsato && isOut) return false
+    const isOutLocal = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
+    if (isUsato && isOutLocal) return false
+
+    const isOutScouting = product.esaurito_scouting === 1 || product.esaurito_scouting === true
 
     const search = filters.search.trim().toLowerCase()
     const matchesSearch = !search || [product.nome, product.tipologia, product.branca, product.taglia]
       .filter(Boolean)
       .some(value => value.toLowerCase().includes(search))
+
+    const isAvailable = isUsato ? !isOutLocal : !isOutScouting
     const matchesAvailability = !filters.disponibilita || (
-      filters.disponibilita === 'disponibile'
-        ? product.quantita_magazzino === null || product.quantita_magazzino === undefined || product.quantita_magazzino > 0
-        : product.quantita_magazzino === 0
+      filters.disponibilita === 'disponibile' ? isAvailable : !isAvailable
     )
 
     return matchesSearch &&
       (!filters.tipologia || product.tipologia === filters.tipologia) &&
       (!filters.branca || product.branca === filters.branca || product.branca === 'Tutti') &&
       (!filters.taglia || product.taglia === filters.taglia) &&
-      (!filters.usato || (filters.usato === 'usato' ? product.usato === 1 : product.usato !== 1)) &&
+      (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
       matchesAvailability
   }), [products, filters])
 
@@ -208,11 +218,35 @@ export default function ProductSelector({ products, onAddItem }) {
 
       <div className="products-list">
         {groupedProducts.map(product => {
-          const availableItems = product.items.filter(item => item.quantita_magazzino === null || item.quantita_magazzino === undefined || item.quantita_magazzino > 0)
+          const availableItems = product.items.filter(item => {
+            const isUsatoItem = item.usato === 1 || item.usato === true
+            const isOutLocalItem = item.quantita_magazzino !== null && item.quantita_magazzino !== undefined && item.quantita_magazzino <= 0
+            const isOutScoutingItem = item.esaurito_scouting === 1 || item.esaurito_scouting === true
+
+            if (isOutScoutingItem) return false
+            if (isUsatoItem && isOutLocalItem) return false
+            return true
+          })
+
           const available = availableItems.length > 0
-          const unlimited = availableItems.some(item => item.quantita_magazzino === null || item.quantita_magazzino === undefined)
-          const availableQuantity = availableItems.reduce((total, item) => total + (item.quantita_magazzino || 0), 0)
           const sizes = product.items.map(item => item.taglia).filter(Boolean)
+          const isUsato = product.usato === 1 || product.usato === true
+          const localStock = product.quantita_magazzino
+          const isOutScouting = product.esaurito_scouting === 1 || product.esaurito_scouting === true
+
+          let stockText = ''
+          if (isOutScouting) {
+            stockText = 'Esaurito su Scouting FSE'
+          } else if (isUsato) {
+            stockText = localStock ? `Disponibili usati: ${localStock}` : 'Usato disponibile'
+          } else {
+            if (localStock !== null && localStock !== undefined && localStock > 0) {
+              stockText = `Disponibile in magazzino (${localStock} pz)`
+            } else {
+              stockText = 'Ordinabile su richiesta'
+            }
+          }
+
           return (
             <div key={`${product.id}-${product.specialita || ''}`} className="product-row">
               <div className="product-image-wrap">
@@ -226,17 +260,15 @@ export default function ProductSelector({ products, onAddItem }) {
                 <div className="product-meta">
                   <span>Branca: {product.branca}</span>
                   <span>Taglie: {sizes.length > 0 ? sizes.join(', ') : 'Taglia unica'}</span>
-                  {product.usato === 1 && <span className="badge-usato">Articolo usato</span>}
+                  {isUsato && <span className="badge-usato">Articolo usato</span>}
                 </div>
-                <p className="product-stock">
-                  {unlimited ? 'Disponibile senza vincoli' : available ? `Disponibili: ${availableQuantity}` : 'Non disponibile'}
-                </p>
+                <p className="product-stock">{stockText}</p>
               </div>
               <div className="product-order">
                 <p className="product-price">€ {product.prezzo.toFixed(2)}</p>
                 {available ? (
                   <div className="product-footer">
-                    <input type="number" min="1" max={product.quantita_magazzino || undefined} value={quantities[product.id] || 1} onChange={(e) => handleQuantityChange(product.id, e.target.value)} className="qty-input" aria-label={`Quantità ${product.nome}`} />
+                    <input type="number" min="1" max={isUsato ? (product.quantita_magazzino || undefined) : undefined} value={quantities[product.id] || 1} onChange={(e) => handleQuantityChange(product.id, e.target.value)} className="qty-input" aria-label={`Quantità ${product.nome}`} />
                     <button type="button" className="btn-add" onClick={() => handleAddGroup(product)}>{sizes.length > 1 ? 'Scegli taglia' : 'Aggiungi'}</button>
                   </div>
                 ) : <span className="out-of-stock">Esaurito</span>}
@@ -257,8 +289,17 @@ export default function ProductSelector({ products, onAddItem }) {
             <p>{sizePicker.nome}{sizePicker.specialita ? ` - ${sizePicker.specialita}` : ''}</p>
             <div className="size-picker-options">
               {sizePicker.items.map(item => {
-                const itemAvailable = item.quantita_magazzino === null || item.quantita_magazzino === undefined || item.quantita_magazzino > 0
-                return <button key={item.id} type="button" disabled={!itemAvailable} onClick={() => { handleAdd(item); setSizePicker(null) }}>{item.taglia || 'Taglia unica'}{!itemAvailable ? ' - Esaurita' : ''}</button>
+                const isUsatoItem = item.usato === 1 || item.usato === true
+                const isOutLocalItem = item.quantita_magazzino !== null && item.quantita_magazzino !== undefined && item.quantita_magazzino <= 0
+                const isOutScoutingItem = item.esaurito_scouting === 1 || item.esaurito_scouting === true
+                const itemAvailable = !isOutScoutingItem && !(isUsatoItem && isOutLocalItem)
+
+                return (
+                  <button key={item.id} type="button" disabled={!itemAvailable} onClick={() => { handleAdd(item); setSizePicker(null) }}>
+                    {item.taglia || 'Taglia unica'}
+                    {!itemAvailable ? (isOutScoutingItem ? ' - Esaurita su Scouting FSE' : ' - Esaurita') : ''}
+                  </button>
+                )
               })}
             </div>
           </div>
