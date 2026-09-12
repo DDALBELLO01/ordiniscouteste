@@ -9,6 +9,7 @@ export default function ToBuyManagement() {
   const [syncingStock, setSyncingStock] = useState(false)
   const [configStatus, setConfigStatus] = useState(null)
   const [orderResults, setOrderResults] = useState(null)
+  const [toastMessage, setToastMessage] = useState(null)
 
   useEffect(() => {
     fetchItemsToBuy()
@@ -35,15 +36,19 @@ export default function ToBuyManagement() {
     }
   }
 
+  const showToast = (msg, type = 'info') => {
+    setToastMessage({ msg, type })
+  }
+
   const handleSyncAvailability = async () => {
     setSyncingStock(true)
     try {
       const response = await axios.post('/api/admin/scouting-fse/sincronizza-disponibilita')
-      alert('🔄 ' + response.data.message)
+      showToast('🔄 ' + response.data.message, 'success')
       fetchItemsToBuy()
     } catch (error) {
       console.error('Errore sincronizzazione disponibilità:', error)
-      alert('Errore: ' + (error.response?.data?.error || error.message))
+      showToast('Errore: ' + (error.response?.data?.error || error.message), 'error')
     } finally {
       setSyncingStock(false)
     }
@@ -51,7 +56,7 @@ export default function ToBuyManagement() {
 
   const handleOrderAllScoutingFse = async () => {
     if (itemsToBuy.length === 0) {
-      alert('Nessun articolo nuovo da acquistare al momento!')
+      showToast('Nessun articolo nuovo da acquistare al momento!', 'warning')
       return
     }
 
@@ -63,10 +68,10 @@ export default function ToBuyManagement() {
       })
 
       setOrderResults(response.data.details)
-      alert('🚀 ' + response.data.message)
+      showToast('🚀 ' + response.data.message, 'success')
     } catch (error) {
       console.error('Errore invio ordine Scouting FSE:', error)
-      alert('Errore: ' + (error.response?.data?.error || error.message))
+      showToast('Errore: ' + (error.response?.data?.error || error.message), 'error')
     } finally {
       setOrdering(false)
     }
@@ -185,6 +190,27 @@ export default function ToBuyManagement() {
           </tbody>
         </table>
       </div>
+
+      {toastMessage && (
+        <div className="modal-overlay" onClick={() => setToastMessage(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center' }}>
+            <div className="modal-header" style={{ justifyContent: 'center' }}>
+              <h3>{toastMessage.type === 'error' ? '⚠️ Errore' : toastMessage.type === 'success' ? '✅ Operazione Completata' : 'ℹ️ Informazione'}</h3>
+            </div>
+            <div className="modal-content">
+              <p style={{ fontSize: '15px', margin: '15px 0' }}>{toastMessage.msg}</p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setToastMessage(null)}
+                style={{ width: '100%', padding: '10px' }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

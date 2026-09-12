@@ -252,8 +252,8 @@ export async function syncScoutingFseStock(db) {
   for (const p of prodotti) {
     let idProdotto = p.scouting_id_prodotto;
     if (!idProdotto && p.immagine) {
-      const match = p.immagine.match(/product_(\d+)_/i);
-      if (match) idProdotto = match[1];
+      const match = p.immagine.match(/(\d{3,6})/);
+      if (match) idProdotto = parseInt(match[1], 10);
     }
     if (!idProdotto) continue;
 
