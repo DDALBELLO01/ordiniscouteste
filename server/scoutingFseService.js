@@ -126,6 +126,17 @@ export function parseCurlCommand(rawCurl) {
   };
 }
 
+function isCloudflareResponse(data) {
+  if (!data) return false;
+  const str = typeof data === 'string' ? data : JSON.stringify(data);
+  const lower = str.toLowerCase();
+  return lower.includes('just a moment') ||
+         lower.includes('cf-challenge') ||
+         lower.includes('turnstile') ||
+         lower.includes('cloudflare') ||
+         (str.trim().toLowerCase().startsWith('<!doctype') && lower.includes('head'));
+}
+
 /**
  * Executes add-to-cart requests on Scouting FSE for a list of items.
  * Uses rawCurl cookies if provided; falls back to automatic login if no cURL is present.
@@ -192,7 +203,8 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     };
   }
 
-  for (const item of requestedItems) {
+  for (let idx = 0; idx < requestedItems.length; idx++) {
+    const item = requestedItems[idx];
     try {
       const qty = Number(item.quantita_prenotata) > 0 ? Number(item.quantita_prenotata) : 1;
       let idProdotto = item.scouting_id_prodotto || item.id_prodotto || sampleIdProdotto;
@@ -228,6 +240,29 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
         timeout: 10000
       });
 
+      if (isCloudflareResponse(response.data)) {
+        const cfMsg = 'Sessione cURL / Cookie scaduti (Blocco Cloudflare). Clicca su "⚙️ cURL Sessione" e incolla un cURL fresco dal browser.';
+        results.push({
+          item: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
+          qty,
+          status: 'error',
+          statusCode: response.status,
+          message: cfMsg
+        });
+
+        // Fail fast for remaining items
+        for (let rem = idx + 1; rem < requestedItems.length; rem++) {
+          const remItem = requestedItems[rem];
+          results.push({
+            item: `${remItem.nome}${remItem.taglia ? ` (${remItem.taglia})` : ''}`,
+            qty: Number(remItem.quantita_prenotata) || 1,
+            status: 'error',
+            message: 'Annullato: Sessione cURL scaduta. Aggiorna il cURL per procedere.'
+          });
+        }
+        break;
+      }
+
       results.push({
         item: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
         qty,
@@ -237,17 +272,48 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
       });
     } catch (err) {
       console.error(`Errore invio Scouting FSE per ${item.nome}:`, err.message);
+      let errorMsg = err.message;
+      let isCfBlock = false;
+
+      if (err.response?.data) {
+        const rawData = typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data);
+        if (isCloudflareResponse(rawData)) {
+          errorMsg = 'Sessione cURL / Cookie scaduti (Blocco Cloudflare). Clicca su "⚙️ cURL Sessione" e incolla un cURL fresco dal browser.';
+          isCfBlock = true;
+        } else if (rawData.trim().startsWith('<!') || rawData.trim().startsWith('<html')) {
+          errorMsg = 'Risposta non valida dal server Scouting FSE (Sessione o Cookie scaduti).';
+          isCfBlock = true;
+        } else {
+          errorMsg = rawData.substring(0, 120);
+        }
+      }
+
       results.push({
-        item: item.nome,
+        item: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
+        qty: Number(item.quantita_prenotata) || 1,
         status: 'error',
-        message: err.response?.data ? String(err.response.data).substring(0, 100) : err.message
+        message: errorMsg
       });
+
+      if (isCfBlock) {
+        // Fail fast for remaining items if Cloudflare blocked the session
+        for (let rem = idx + 1; rem < requestedItems.length; rem++) {
+          const remItem = requestedItems[rem];
+          results.push({
+            item: `${remItem.nome}${remItem.taglia ? ` (${remItem.taglia})` : ''}`,
+            qty: Number(remItem.quantita_prenotata) || 1,
+            status: 'error',
+            message: 'Annullato: Sessione cURL scaduta. Aggiorna il cURL per procedere.'
+          });
+        }
+        break;
+      }
     }
   }
 
   return {
     success: true,
-    total: items.length,
+    total: items.filter(i => (Number(i.quantita_prenotata) || 0) > 0).length,
     successfulCount: results.filter(r => r.status === 'success').length,
     results
   };
