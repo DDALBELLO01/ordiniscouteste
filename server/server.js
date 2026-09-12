@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification } from './emailService.js';
+import { sendOrderToScoutingFse, parseCurlCommand } from './scoutingFseService.js';
 
 dotenv.config();
 
@@ -186,15 +187,15 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
 
     const result = await db.run(
-      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
+      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scouting_id_prodotto ? Number(scouting_id_prodotto) : null, scouting_caratteristica_id ? Number(scouting_caratteristica_id) : null]
     );
 
     res.status(201).json({ id: result.lastID, message: 'Prodotto creato' });
@@ -207,15 +208,15 @@ app.post('/api/admin/prodotti', async (req, res) => {
 app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
 
     await db.run(
-      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP 
+      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, scouting_id_prodotto = ?, scouting_caratteristica_id = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?`,
-      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
+      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scouting_id_prodotto ? Number(scouting_id_prodotto) : null, scouting_caratteristica_id ? Number(scouting_caratteristica_id) : null, req.params.id]
     );
 
     res.json({ message: 'Prodotto aggiornato' });
@@ -391,25 +392,119 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
 });
 
 // AGGIUNTA IN 1-CLICK SU SCOUTING FSE
+app.get('/api/admin/scouting-fse/config', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const config = await db.get('SELECT valore, updated_at FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
+    const parsed = config?.valore ? parseCurlCommand(config.valore) : null;
+    res.json({
+      configured: !!config?.valore,
+      updated_at: config?.updated_at || null,
+      rawCurl: config?.valore || '',
+      parsedSummary: parsed ? {
+        url: parsed.url,
+        hasCookies: !!parsed.cookies,
+        headersCount: Object.keys(parsed.headers || {}).length
+      } : null
+    });
+  } catch (error) {
+    console.error('Errore lettura config Scouting FSE:', error);
+    res.status(500).json({ error: 'Errore lettura configurazione Scouting FSE' });
+  }
+});
+
+app.post('/api/admin/scouting-fse/config', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const { rawCurl } = req.body;
+    if (!rawCurl || typeof rawCurl !== 'string') {
+      return res.status(400).json({ error: 'Fornire una stringa cURL valida.' });
+    }
+
+    const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
+    if (existing) {
+      await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
+    } else {
+      await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
+    }
+
+    const parsed = parseCurlCommand(rawCurl);
+    res.json({
+      message: 'Configurazione cURL salvata con successo!',
+      parsedSummary: parsed ? {
+        url: parsed.url,
+        hasCookies: !!parsed.cookies,
+        headersCount: Object.keys(parsed.headers || {}).length
+      } : null
+    });
+  } catch (error) {
+    console.error('Errore salvataggio config Scouting FSE:', error);
+    res.status(500).json({ error: 'Errore salvataggio configurazione Scouting FSE' });
+  }
+});
+
 app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
   try {
+    const db = getDatabase();
     const { items, cUrlConfig } = req.body;
-    // Endpoint pronto per inoltrare le chiamate Scouting FSE
-    if (!cUrlConfig || !cUrlConfig.url) {
+
+    let rawCurl = typeof cUrlConfig === 'string' ? cUrlConfig : (cUrlConfig?.rawCurl || cUrlConfig?.raw);
+
+    if (rawCurl) {
+      const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
+      if (existing) {
+        await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
+      } else {
+        await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
+      }
+    } else {
+      const config = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
+      rawCurl = config?.valore;
+    }
+
+    if (!rawCurl) {
       return res.status(400).json({
         success: false,
         requiresConfig: true,
-        message: 'Per completare l\'integrazione automatica con Scouting FSE, incolla la chiamata cURL dal sito scoutingfse.it.'
+        message: 'Nessuna configurazione cURL salvata. Incolla la chiamata cURL per procedere.'
       });
     }
 
+    let targetItems = items;
+    if (!targetItems || targetItems.length === 0) {
+      targetItems = await db.all(`
+        SELECT p.*,
+          COALESCE((
+            SELECT SUM(dp.quantita)
+            FROM dettagli_prenotazioni dp
+            JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+            WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          ), 0) as quantita_prenotata
+        FROM prodotti p
+        WHERE (p.usato = 0 OR p.usato IS NULL)
+          AND (
+            p.quantita_magazzino = 0 
+            OR p.quantita_magazzino < 0
+            OR COALESCE((
+              SELECT SUM(dp.quantita)
+              FROM dettagli_prenotazioni dp
+              JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+              WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+            ), 0) > COALESCE(p.quantita_magazzino, 999999)
+          )
+      `);
+    }
+
+    const result = await sendOrderToScoutingFse(rawCurl, targetItems);
+
     res.json({
       success: true,
-      message: `Inviato ordine automatico a Scouting FSE per ${items ? items.length : 0} articoli!`
+      message: `Elaborati ${result.total} articoli (${result.successfulCount} aggiunti al carrello Scouting FSE)!`,
+      details: result
     });
   } catch (error) {
     console.error('Errore invio Scouting FSE:', error);
-    res.status(500).json({ error: 'Errore nell\'invio dell\'ordine a Scouting FSE' });
+    res.status(500).json({ error: error.message || 'Errore nell\'invio dell\'ordine a Scouting FSE' });
   }
 });
 

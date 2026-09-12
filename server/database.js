@@ -66,6 +66,12 @@ export async function initializeDatabase() {
     await db.run('ALTER TABLE prodotti ADD COLUMN mostra_home INTEGER DEFAULT 1');
     await db.run('UPDATE prodotti SET mostra_home = 1 WHERE mostra_home IS NULL');
   }
+  if (!colonneProdotti.some(colonna => colonna.name === 'scouting_id_prodotto')) {
+    await db.run('ALTER TABLE prodotti ADD COLUMN scouting_id_prodotto INTEGER');
+  }
+  if (!colonneProdotti.some(colonna => colonna.name === 'scouting_caratteristica_id')) {
+    await db.run('ALTER TABLE prodotti ADD COLUMN scouting_caratteristica_id INTEGER');
+  }
 
   // Tabella Prenotazioni
   await db.exec(`
@@ -250,6 +256,8 @@ async function initializePostgresDatabase() {
       password_hash TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_id_prodotto INTEGER;
+    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_caratteristica_id INTEGER;
   `);
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
