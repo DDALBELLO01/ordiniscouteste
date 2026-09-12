@@ -6,8 +6,6 @@ export default function ToBuyManagement() {
   const [itemsToBuy, setItemsToBuy] = useState([])
   const [loading, setLoading] = useState(true)
   const [ordering, setOrdering] = useState(false)
-  const [curlPromptOpen, setCurlPromptOpen] = useState(false)
-  const [curlText, setCurlText] = useState('')
   const [configStatus, setConfigStatus] = useState(null)
   const [orderResults, setOrderResults] = useState(null)
 
@@ -31,24 +29,8 @@ export default function ToBuyManagement() {
     try {
       const response = await axios.get('/api/admin/scouting-fse/config')
       setConfigStatus(response.data)
-      if (response.data.rawCurl) {
-        setCurlText(response.data.rawCurl)
-      }
     } catch (error) {
       console.error('Errore configurazione Scouting FSE:', error)
-    }
-  }
-
-  const handleSaveConfig = async () => {
-    if (!curlText.trim()) return
-    try {
-      const response = await axios.post('/api/admin/scouting-fse/config', { rawCurl: curlText })
-      alert('✅ ' + response.data.message)
-      setCurlPromptOpen(false)
-      fetchConfigStatus()
-    } catch (error) {
-      console.error('Errore salvataggio config:', error)
-      alert('Errore salvataggio cURL: ' + (error.response?.data?.error || error.message))
     }
   }
 
@@ -62,16 +44,11 @@ export default function ToBuyManagement() {
     setOrderResults(null)
     try {
       const response = await axios.post('/api/admin/scouting-fse/ordina-tutti', {
-        items: itemsToBuy,
-        cUrlConfig: curlText.trim() ? curlText.trim() : null
+        items: itemsToBuy
       })
 
-      if (response.data.requiresConfig) {
-        setCurlPromptOpen(true)
-      } else {
-        setOrderResults(response.data.details)
-        alert('🚀 ' + response.data.message)
-      }
+      setOrderResults(response.data.details)
+      alert('🚀 ' + response.data.message)
     } catch (error) {
       console.error('Errore invio ordine Scouting FSE:', error)
       alert('Errore: ' + (error.response?.data?.error || error.message))
@@ -99,29 +76,14 @@ export default function ToBuyManagement() {
       </div>
 
       <div className="tobuy-info-banner">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <p style={{ margin: 0 }}>
-              Questa lista mostra automaticamente tutti gli <strong>articoli nuovi (non usati)</strong> con <strong>giacenza esaurita (0)</strong> o richiesti nelle prenotazioni attive.
-            </p>
-            {configStatus && (
-              <p style={{ margin: '6px 0 0', fontSize: '13px' }}>
-                Stato Sessione Scouting FSE: {configStatus.configured ? (
-                  <strong style={{ color: '#276749' }}>✅ Configurato e Salvato ({new Date(configStatus.updated_at).toLocaleDateString('it-IT')})</strong>
-                ) : (
-                  <strong style={{ color: '#c53030' }}>⚠️ Non configurato (Incolla cURL)</strong>
-                )}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            className="btn-small btn-secondary"
-            onClick={() => setCurlPromptOpen(true)}
-          >
-            ⚙️ {configStatus?.configured ? 'Aggiorna cURL' : 'Incolla cURL'}
-          </button>
-        </div>
+        <p style={{ margin: 0 }}>
+          Questa lista mostra automaticamente tutti gli <strong>articoli nuovi (non usati)</strong> con <strong>giacenza esaurita (0)</strong> o richiesti nelle prenotazioni attive.
+        </p>
+        {configStatus && configStatus.autoAuth && (
+          <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#276749' }}>
+            <strong>✅ Autenticazione Automatica Attiva ({configStatus.email})</strong> — Gli ordini verranno inseriti direttamente nel carrello Scouting FSE.
+          </p>
+        )}
       </div>
 
       {orderResults && (
@@ -198,48 +160,6 @@ export default function ToBuyManagement() {
           </tbody>
         </table>
       </div>
-
-      {curlPromptOpen && (
-        <div className="modal-overlay" onClick={() => setCurlPromptOpen(false)}>
-          <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>🔗 Configurazione cURL / Sessione Scouting FSE</h3>
-              <button type="button" className="btn-close" onClick={() => setCurlPromptOpen(false)}>✕</button>
-            </div>
-            <div className="modal-content">
-              <p style={{ fontSize: '14px', lineHeight: '1.5' }}>
-                Incolla qui il comando <strong>cURL (cmd, bash o powershell)</strong> che hai copiato dai Developer Tools del browser (F12 ➔ Network ➔ Tasto destro sulla richiesta `buy.html` ➔ Copy as cURL):
-              </p>
-              <textarea
-                rows="8"
-                style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px', padding: '10px', borderRadius: '4px', border: '1px solid #cbd5e0' }}
-                value={curlText}
-                onChange={(e) => setCurlText(e.target.value)}
-                placeholder="curl --url 'https://www.scoutingfse.it/buy.html?mod=caratteristica...' -H 'Cookie: ...' --data-raw '...'"
-              />
-              <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setCurlPromptOpen(false)}
-                >
-                  Annulla
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={!curlText.trim()}
-                  onClick={() => {
-                    handleSaveConfig()
-                  }}
-                >
-                  💾 Salva cURL e Invia Ordine
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

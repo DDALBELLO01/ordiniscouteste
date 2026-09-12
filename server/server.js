@@ -394,18 +394,10 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
 // AGGIUNTA IN 1-CLICK SU SCOUTING FSE
 app.get('/api/admin/scouting-fse/config', async (req, res) => {
   try {
-    const db = getDatabase();
-    const config = await db.get('SELECT valore, updated_at FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-    const parsed = config?.valore ? parseCurlCommand(config.valore) : null;
+    const hasCreds = !!(process.env.SCOUTING_FSE_EMAIL && process.env.SCOUTING_FSE_PASSWORD);
     res.json({
-      configured: !!config?.valore,
-      updated_at: config?.updated_at || null,
-      rawCurl: config?.valore || '',
-      parsedSummary: parsed ? {
-        url: parsed.url,
-        hasCookies: !!parsed.cookies,
-        headersCount: Object.keys(parsed.headers || {}).length
-      } : null
+      autoAuth: hasCreds,
+      email: process.env.SCOUTING_FSE_EMAIL || null
     });
   } catch (error) {
     console.error('Errore lettura config Scouting FSE:', error);
@@ -413,62 +405,10 @@ app.get('/api/admin/scouting-fse/config', async (req, res) => {
   }
 });
 
-app.post('/api/admin/scouting-fse/config', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { rawCurl } = req.body;
-    if (!rawCurl || typeof rawCurl !== 'string') {
-      return res.status(400).json({ error: 'Fornire una stringa cURL valida.' });
-    }
-
-    const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-    if (existing) {
-      await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
-    } else {
-      await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
-    }
-
-    const parsed = parseCurlCommand(rawCurl);
-    res.json({
-      message: 'Configurazione cURL salvata con successo!',
-      parsedSummary: parsed ? {
-        url: parsed.url,
-        hasCookies: !!parsed.cookies,
-        headersCount: Object.keys(parsed.headers || {}).length
-      } : null
-    });
-  } catch (error) {
-    console.error('Errore salvataggio config Scouting FSE:', error);
-    res.status(500).json({ error: 'Errore salvataggio configurazione Scouting FSE' });
-  }
-});
-
 app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
   try {
     const db = getDatabase();
-    const { items, cUrlConfig } = req.body;
-
-    let rawCurl = typeof cUrlConfig === 'string' ? cUrlConfig : (cUrlConfig?.rawCurl || cUrlConfig?.raw);
-
-    if (rawCurl) {
-      const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-      if (existing) {
-        await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
-      } else {
-        await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
-      }
-    } else {
-      const config = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-      rawCurl = config?.valore;
-    }
-
-    if (!rawCurl) {
-      return res.status(400).json({
-        success: false,
-        requiresConfig: true,
-        message: 'Nessuna configurazione cURL salvata. Incolla la chiamata cURL per procedere.'
-      });
-    }
+    const { items } = req.body;
 
     let targetItems = items;
     if (!targetItems || targetItems.length === 0) {
@@ -494,6 +434,9 @@ app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
           )
       `);
     }
+
+    const config = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
+    const rawCurl = config?.valore || null;
 
     const result = await sendOrderToScoutingFse(rawCurl, targetItems);
 
