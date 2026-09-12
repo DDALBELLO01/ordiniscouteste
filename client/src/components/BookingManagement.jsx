@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import '../styles/components.css'
 
+const statuses = ['attiva', 'confermata', 'ritirata', 'annullata']
+
 export default function BookingManagement() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
