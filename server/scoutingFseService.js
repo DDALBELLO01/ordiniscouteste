@@ -180,15 +180,27 @@ export async function sendOrderToScoutingFse(rawCurl, items) {
     'Cookie': sessionCookies
   };
 
-  for (const item of items) {
-    try {
-      const qty = item.quantita_prenotata > 0 ? item.quantita_prenotata : 1;
-      let idProdotto = item.scouting_id_prodotto || item.id_prodotto || parsed.sampleIdProdotto;
-      let caratteristica0 = item.scouting_caratteristica_id || parsed.sampleCaratteristica0;
+  // Filter items to only process requested items (quantita_prenotata > 0)
+  const requestedItems = items.filter(item => (Number(item.quantita_prenotata) || 0) > 0);
 
-      // Extract id_prodotto from image URL if formatted like product_1018_...
+  if (requestedItems.length === 0) {
+    return {
+      success: true,
+      total: 0,
+      successfulCount: 0,
+      results: []
+    };
+  }
+
+  for (const item of requestedItems) {
+    try {
+      const qty = Number(item.quantita_prenotata) > 0 ? Number(item.quantita_prenotata) : 1;
+      let idProdotto = item.scouting_id_prodotto || item.id_prodotto || sampleIdProdotto;
+      let caratteristica0 = item.scouting_caratteristica_id || sampleCaratteristica0;
+
+      // Extract id_prodotto from image URL if formatted like product_1018_... or numbers in URL
       if (!idProdotto && item.immagine) {
-        const idMatch = item.immagine.match(/product_(\d+)_/i);
+        const idMatch = item.immagine.match(/(\d{3,6})/);
         if (idMatch) idProdotto = idMatch[1];
       }
 

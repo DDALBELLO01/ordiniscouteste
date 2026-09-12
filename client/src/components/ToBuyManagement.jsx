@@ -73,15 +73,17 @@ export default function ToBuyManagement() {
   }
 
   const handleOrderAllScoutingFse = async () => {
-    if (itemsToBuy.length === 0) {
-      showToast('Nessun articolo nuovo da acquistare al momento!', 'warning')
+    const requestedItems = itemsToBuy.filter(i => (Number(i.quantita_prenotata) || 0) > 0)
+
+    if (requestedItems.length === 0) {
+      showToast('Nessun articolo ha richieste attive nelle prenotazioni da ordinare su Scouting FSE!', 'warning')
       return
     }
 
     setOrdering(true)
     setOrderResults(null)
     try {
-      const minimalItems = itemsToBuy.map(i => ({
+      const minimalItems = requestedItems.map(i => ({
         id: i.id,
         nome: i.nome,
         taglia: i.taglia,
