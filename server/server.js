@@ -307,26 +307,11 @@ app.get('/api/admin/prenotazioni/:id', async (req, res) => {
   }
 });
 
-app.put('/api/admin/prenotazioni/:id/stato', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { stato } = req.body;
-    await db.run(
-      'UPDATE prenotazioni SET stato = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [stato, req.params.id]
-    );
-    res.json({ message: 'Stato prenotazione aggiornato' });
-  } catch (error) {
-    console.error('Errore aggiornamento stato:', error);
-    res.status(500).json({ error: 'Errore aggiornamento stato' });
-  }
-});
-
 // MODIFICA COMPLETA PRENOTAZIONE CON RICALCOLO GIACENZE
 app.put('/api/admin/prenotazioni/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome_prenotante, email_prenotante, branca_riferimento, note, stato, items } = req.body;
+    const { nome_prenotante, email_prenotante, branca_riferimento, note, items } = req.body;
     const bookingId = req.params.id;
 
     const existing = await db.get('SELECT * FROM prenotazioni WHERE id = ?', [bookingId]);
@@ -336,14 +321,13 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
 
     await db.run(
       `UPDATE prenotazioni 
-       SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, note = ?, stato = ?, updated_at = CURRENT_TIMESTAMP 
+       SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, note = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?`,
       [
         nome_prenotante || existing.nome_prenotante,
         email_prenotante || existing.email_prenotante,
         branca_riferimento || existing.branca_riferimento,
         note !== undefined ? note : existing.note,
-        stato || existing.stato,
         bookingId
       ]
     );
@@ -401,7 +385,7 @@ app.get('/api/public/scouting-fse/pending-items', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) as quantita_prenotata
       FROM prodotti p
       WHERE (p.usato = 0 OR p.usato IS NULL)
@@ -409,7 +393,7 @@ app.get('/api/public/scouting-fse/pending-items', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) > 0
       ORDER BY p.branca, p.nome
     `);
@@ -432,7 +416,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) as quantita_prenotata
       FROM prodotti p
       WHERE (p.usato = 0 OR p.usato IS NULL)
@@ -444,7 +428,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) > 0
       `;
     } else {
@@ -456,7 +440,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
             SELECT SUM(dp.quantita)
             FROM dettagli_prenotazioni dp
             JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-            WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+            WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
           ), 0) > COALESCE(p.quantita_magazzino, 999999)
         )
       `;
@@ -555,7 +539,7 @@ app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
             SELECT SUM(dp.quantita)
             FROM dettagli_prenotazioni dp
             JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-            WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+            WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
           ), 0) as quantita_prenotata
         FROM prodotti p
         WHERE (p.usato = 0 OR p.usato IS NULL)
@@ -566,7 +550,7 @@ app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
               SELECT SUM(dp.quantita)
               FROM dettagli_prenotazioni dp
               JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-              WHERE dp.prodotto_id = p.id AND pr.stato IN ('attiva', 'confermata')
+              WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
             ), 0) > COALESCE(p.quantita_magazzino, 999999)
           )
       `);
@@ -732,7 +716,7 @@ async function inviaRiepiloghiChiusuraBranche(db) {
   for (const branca of branche) {
     const destinatario = emailMap[branca];
     const prenotazioni = await db.all(
-      `SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL) AND stato != 'annullata' AND (branca_riferimento = ? OR branca_riferimento = 'Tutti')`,
+      `SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL) AND (branca_riferimento = ? OR branca_riferimento = 'Tutti')`,
       [branca]
     );
     if (prenotazioni.length === 0) continue;

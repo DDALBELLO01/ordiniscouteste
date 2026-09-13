@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import '../styles/components.css'
 
-const statuses = ['attiva', 'confermata', 'ritirata', 'annullata']
-
 export default function BookingManagement() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
@@ -69,18 +67,6 @@ export default function BookingManagement() {
       alert('Errore aggiornamento configurazione')
     } finally {
       setTogglingStatus(false)
-    }
-  }
-
-  const handleChangeStatus = async (bookingId, newStatus) => {
-    try {
-      await axios.put(`/api/admin/prenotazioni/${bookingId}/stato`, {
-        stato: newStatus
-      })
-      fetchBookings()
-    } catch (error) {
-      console.error('Errore aggiornamento:', error)
-      alert('Errore aggiornamento stato')
     }
   }
 
@@ -192,7 +178,6 @@ export default function BookingManagement() {
               <th className="sortable-th" onClick={() => handleSort('data_prenotazione')}>Data{renderSortIndicator('data_prenotazione')}</th>
               <th className="sortable-th" onClick={() => handleSort('num_items')}>Articoli{renderSortIndicator('num_items')}</th>
               <th className="sortable-th" onClick={() => handleSort('totale')}>Totale{renderSortIndicator('totale')}</th>
-              <th className="sortable-th" onClick={() => handleSort('stato')}>Stato{renderSortIndicator('stato')}</th>
               <th>Azioni</th>
             </tr>
           </thead>
@@ -205,15 +190,6 @@ export default function BookingManagement() {
                 <td>{new Date(booking.data_prenotazione).toLocaleDateString('it-IT')}</td>
                 <td>{booking.num_items} articoli</td>
                 <td>€ {Number(booking.totale || 0).toFixed(2)}</td>
-                <td>
-                  <select 
-                    value={booking.stato}
-                    onChange={(e) => handleChangeStatus(booking.id, e.target.value)}
-                    className={`status-select status-${booking.stato}`}
-                  >
-                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </td>
                 <td className="actions">
                   <button 
                     className="btn-small btn-view"
@@ -256,13 +232,11 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
     email_prenotante: '',
     branca_riferimento: '',
     note: '',
-    stato: 'attiva',
     items: []
   })
   const [selectedAddProductId, setSelectedAddProductId] = useState('')
 
   const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
-  const statuses = ['attiva', 'confermata', 'ritirata', 'annullata']
 
   useEffect(() => {
     fetchDetails()
@@ -278,7 +252,6 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
         email_prenotante: response.data.email_prenotante,
         branca_riferimento: response.data.branca_riferimento || '',
         note: response.data.note || '',
-        stato: response.data.stato || 'attiva',
         items: response.data.items.map(item => ({
           prodotto_id: item.prodotto_id,
           nome: item.nome,
@@ -390,7 +363,6 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
                 <p><strong>Nome:</strong> {booking.nome_prenotante}</p>
                 <p><strong>Email:</strong> {booking.email_prenotante}</p>
                 <p><strong>Branca di riferimento:</strong> {booking.branca_riferimento || '-'}</p>
-                <p><strong>Stato:</strong> <span className={`status-badge status-${booking.stato}`}>{booking.stato}</span></p>
                 <p><strong>Data:</strong> {new Date(booking.data_prenotazione).toLocaleString('it-IT')}</p>
                 {booking.note && <p><strong>Note:</strong> {booking.note}</p>}
               </div>
@@ -449,15 +421,6 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
                     onChange={(e) => setEditForm({ ...editForm, branca_riferimento: e.target.value })}
                   >
                     {branches.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Stato Prenotazione:</label>
-                  <select
-                    value={editForm.stato}
-                    onChange={(e) => setEditForm({ ...editForm, stato: e.target.value })}
-                  >
-                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
