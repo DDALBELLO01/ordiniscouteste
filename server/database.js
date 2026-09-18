@@ -72,6 +72,9 @@ export async function initializeDatabase() {
   if (!colonneProdotti.some(colonna => colonna.name === 'scouting_caratteristica_id')) {
     await db.run('ALTER TABLE prodotti ADD COLUMN scouting_caratteristica_id INTEGER');
   }
+  if (!colonneProdotti.some(colonna => colonna.name === 'guida_taglie_url')) {
+    await db.run('ALTER TABLE prodotti ADD COLUMN guida_taglie_url TEXT');
+  }
   if (!colonneProdotti.some(colonna => colonna.name === 'esaurito_scouting')) {
     await db.run('ALTER TABLE prodotti ADD COLUMN esaurito_scouting INTEGER DEFAULT 0');
   }
@@ -287,6 +290,7 @@ async function initializePostgresDatabase() {
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_id_prodotto INTEGER;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_caratteristica_id INTEGER;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS esaurito_scouting INTEGER DEFAULT 0;
+    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS guida_taglie_url TEXT;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS archiviata INTEGER DEFAULT 0;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS data_archiviazione TIMESTAMP;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS metodo_pagamento TEXT DEFAULT 'in_sede';

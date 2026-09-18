@@ -6,22 +6,11 @@ export default function ToBuyManagement() {
   const [itemsToBuy, setItemsToBuy] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterView, setFilterView] = useState('richiesti')
-  const [sizeGuideUrl, setSizeGuideUrl] = useState('')
-  const [sizeGuideOpen, setSizeGuideOpen] = useState(false)
+  const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
 
   useEffect(() => {
     fetchItemsToBuy(filterView)
-    fetchSizeGuideUrl()
   }, [filterView])
-
-  const fetchSizeGuideUrl = async () => {
-    try {
-      const response = await axios.get('/api/config/guida-taglie')
-      setSizeGuideUrl(response.data.url || '')
-    } catch (error) {
-      console.error('Errore caricamento guida taglie:', error)
-    }
-  }
 
   const fetchItemsToBuy = async (viewMode = filterView) => {
     try {
@@ -69,11 +58,6 @@ export default function ToBuyManagement() {
             <option value="richiesti">Solo richiesti dai clienti</option>
             <option value="tutti_esauriti">Tutti con giacenza 0</option>
           </select>
-          {sizeGuideUrl && (
-            <button type="button" className="btn-secondary" onClick={() => setSizeGuideOpen(true)}>
-              Guida alle taglie
-            </button>
-          )}
         </div>
       </div>
 
@@ -90,7 +74,7 @@ export default function ToBuyManagement() {
           <thead>
             <tr>
               <th>Nome Articolo</th><th>Tipologia</th><th>Branca</th><th>Taglia</th>
-              <th>Prezzo</th><th>Giacenza Attuale</th><th>Richieste Attive</th><th>Stato</th>
+              <th>Prezzo</th><th>Giacenza Attuale</th><th>Richieste Attive</th><th>Guida taglie</th><th>Stato</th>
             </tr>
           </thead>
           <tbody>
@@ -103,18 +87,25 @@ export default function ToBuyManagement() {
                 <td>€ {Number(product.prezzo || 0).toFixed(2)}</td>
                 <td>{product.quantita_magazzino ?? 0}</td>
                 <td>{product.quantita_prenotata || 0}</td>
+                <td>
+                  {product.guida_taglie_url ? (
+                    <button type="button" className="btn-small btn-secondary" onClick={() => setSizeGuideUrl(product.guida_taglie_url)}>
+                      Apri guida
+                    </button>
+                  ) : '-'}
+                </td>
                 <td><span className="stock-badge stock-buy">Da acquistare</span></td>
               </tr>
             ))}
             {itemsToBuy.length === 0 && (
-              <tr><td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>Nessun articolo nuovo da acquistare.</td></tr>
+              <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>Nessun articolo nuovo da acquistare.</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      {sizeGuideOpen && (
-        <div className="size-guide-overlay" role="dialog" aria-modal="true" aria-label="Guida alle taglie" onClick={() => setSizeGuideOpen(false)}>
-          <button type="button" className="size-guide-close" onClick={() => setSizeGuideOpen(false)} aria-label="Chiudi guida taglie">×</button>
+      {sizeGuideUrl && (
+        <div className="size-guide-overlay" role="dialog" aria-modal="true" aria-label="Guida alle taglie" onClick={() => setSizeGuideUrl(null)}>
+          <button type="button" className="size-guide-close" onClick={() => setSizeGuideUrl(null)} aria-label="Chiudi guida taglie">×</button>
           <img src={sizeGuideUrl} alt="Guida alle taglie" className="size-guide-image" onClick={(event) => event.stopPropagation()} />
         </div>
       )}

@@ -34,6 +34,10 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <input type="url" value={formData.immagine || ''} onChange={(e) => setFormData({...formData, immagine: e.target.value})} placeholder="https://..." />
         </div>
         <div className="form-group">
+          <label>Guida taglie (URL):</label>
+          <input type="url" value={formData.guida_taglie_url || ''} onChange={(e) => setFormData({...formData, guida_taglie_url: e.target.value})} placeholder="https://.../guida-taglie.jpg" />
+        </div>
+        <div className="form-group">
           <label>Quantità Magazzino:</label>
           <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
         </div>
@@ -83,6 +87,7 @@ export default function ProductManagement() {
     branca: '',
     taglia: '',
     immagine: '',
+    guida_taglie_url: '',
     quantita_magazzino: '',
     prezzo: 0,
     usato: false,
@@ -165,6 +170,7 @@ export default function ProductManagement() {
       branca: '',
       taglia: '',
       immagine: '',
+      guida_taglie_url: '',
       quantita_magazzino: '',
       prezzo: 0,
       usato: false,
