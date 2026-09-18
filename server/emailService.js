@@ -180,7 +180,7 @@ export async function sendAdminNotification(bookingData) {
 
     await sendMailWithRetry({
       from: process.env.SMTP_FROM,
-      to: process.env.ADMIN_EMAIL,
+      to: process.env.SMTP_USER,
       subject: `[ADMIN] Nuova Prenotazione - ${bookingData.id}`,
       html: htmlContent
     });

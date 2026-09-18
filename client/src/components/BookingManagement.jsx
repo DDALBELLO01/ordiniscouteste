@@ -101,7 +101,7 @@ export default function BookingManagement() {
       const response = await axios.post('/api/admin/prenotazioni/archivia-tutte')
       const riepilogo = response.data.riepilogInviati > 0
         ? ` Inviati ${response.data.riepilogInviati} riepiloghi ai capi unità configurati.`
-        : ''
+        : ' Nessun riepilogo inviato: controlla gli indirizzi in Impostazioni e la configurazione SMTP.'
       alert(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}`)
       fetchBookings(viewMode)
     } catch (error) {
