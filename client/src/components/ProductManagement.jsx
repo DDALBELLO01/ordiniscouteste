@@ -43,16 +43,6 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
         </div>
       </div>
       <div className="form-row">
-        <div className="form-group">
-          <label>Scouting FSE ID Prodotto:</label>
-          <input type="number" value={formData.scouting_id_prodotto || ''} onChange={(e) => setFormData({...formData, scouting_id_prodotto: e.target.value})} placeholder="Es. 1018" />
-        </div>
-        <div className="form-group">
-          <label>Scouting FSE ID Caratteristica:</label>
-          <input type="number" value={formData.scouting_caratteristica_id || ''} onChange={(e) => setFormData({...formData, scouting_caratteristica_id: e.target.value})} placeholder="Es. 337" />
-        </div>
-      </div>
-      <div className="form-row">
         <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
           <input type="checkbox" id={`usato-${editingId || 'nuovo'}`} checked={formData.usato} onChange={(e) => setFormData({...formData, usato: e.target.checked})} />
           <label htmlFor={`usato-${editingId || 'nuovo'}`} style={{marginBottom: 0}}>Articolo usato</label>
@@ -97,8 +87,6 @@ export default function ProductManagement() {
     prezzo: 0,
     usato: false,
     mostra_home: true,
-    scouting_id_prodotto: '',
-    scouting_caratteristica_id: ''
   })
 
   const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
@@ -181,8 +169,6 @@ export default function ProductManagement() {
       prezzo: 0,
       usato: false,
       mostra_home: true,
-      scouting_id_prodotto: '',
-      scouting_caratteristica_id: ''
     })
     setEditingId(null)
     setEditTarget(null)

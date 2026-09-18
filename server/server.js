@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
-import { sendOrderToScoutingFse, parseCurlCommand, syncScoutingFseStock } from './scoutingFseService.js';
+ 
 
 dotenv.config();
 
@@ -94,14 +94,8 @@ app.post('/api/prenotazioni', async (req, res) => {
       }
 
       const isUsato = prodotto.usato === 1 || prodotto.usato === true;
-      const isEsauritoScouting = prodotto.esaurito_scouting === 1 || prodotto.esaurito_scouting === true;
-
-      if (isEsauritoScouting) {
-        return res.status(400).json({ error: `${prodotto.nome} è al momento esaurito su Scouting FSE` });
-      }
-
       // Per gli articoli USATI verifica la quantità di magazzino
-      // Per gli articoli NUOVI l'ordine è sempre consentito (se non esaurito su Scouting FSE)
+      // Per gli articoli NUOVI l'ordine è sempre consentito.
       if (isUsato) {
         if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
           if (prodotto.quantita_magazzino <= 0) {
@@ -197,15 +191,15 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
 
     const result = await db.run(
-      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scouting_id_prodotto ? Number(scouting_id_prodotto) : null, scouting_caratteristica_id ? Number(scouting_caratteristica_id) : null]
+      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
     );
 
     res.status(201).json({ id: result.lastID, message: 'Prodotto creato' });
@@ -218,15 +212,15 @@ app.post('/api/admin/prodotti', async (req, res) => {
 app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
 
     await db.run(
-      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, scouting_id_prodotto = ?, scouting_caratteristica_id = ?, updated_at = CURRENT_TIMESTAMP 
+      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scouting_id_prodotto ? Number(scouting_id_prodotto) : null, scouting_caratteristica_id ? Number(scouting_caratteristica_id) : null, req.params.id]
+      [nome, tipologia, branca, taglia || null, specialita || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
     );
 
     res.json({ message: 'Prodotto aggiornato' });
@@ -381,35 +375,6 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
   }
 });
 
-// ENDPOINT PUBBLICO (usato dal bookmarklet eseguito sul dominio scoutingfse.it)
-app.get('/api/public/scouting-fse/pending-items', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const prodotti = await db.all(`
-      SELECT p.id, p.nome, p.taglia, p.immagine, p.scouting_id_prodotto, p.scouting_caratteristica_id,
-        COALESCE((
-          SELECT SUM(dp.quantita)
-          FROM dettagli_prenotazioni dp
-          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-        ), 0) as quantita_prenotata
-      FROM prodotti p
-      WHERE (p.usato = 0 OR p.usato IS NULL)
-        AND COALESCE((
-          SELECT SUM(dp.quantita)
-          FROM dettagli_prenotazioni dp
-          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-        ), 0) > 0
-      ORDER BY p.branca, p.nome
-    `);
-    res.json(prodotti);
-  } catch (error) {
-    console.error('Errore recupero articoli pendenti pubblici:', error);
-    res.status(500).json({ error: 'Errore recupero articoli pendenti' });
-  }
-});
-
 // LISTA ARTICOLI NUOVI DA ACQUISTARE
 app.get('/api/admin/da-acquistare', async (req, res) => {
   try {
@@ -459,134 +424,6 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
   } catch (error) {
     console.error('Errore recupero lista da acquistare:', error);
     res.status(500).json({ error: 'Errore recupero lista da acquistare' });
-  }
-});
-
-// AGGIUNTA IN 1-CLICK SU SCOUTING FSE
-app.get('/api/admin/scouting-fse/config', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const config = await db.get('SELECT valore, updated_at FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-    const hasCreds = !!(process.env.SCOUTING_FSE_EMAIL && process.env.SCOUTING_FSE_PASSWORD);
-    const parsed = config?.valore ? parseCurlCommand(config.valore) : null;
-
-    res.json({
-      autoAuth: hasCreds,
-      email: process.env.SCOUTING_FSE_EMAIL || null,
-      configured: !!config?.valore,
-      updated_at: config?.updated_at || null,
-      rawCurl: config?.valore || '',
-      parsedSummary: parsed ? {
-        url: parsed.url,
-        hasCookies: !!parsed.cookies,
-        headersCount: Object.keys(parsed.headers || {}).length
-      } : null
-    });
-  } catch (error) {
-    console.error('Errore lettura config Scouting FSE:', error);
-    res.status(500).json({ error: 'Errore lettura configurazione Scouting FSE' });
-  }
-});
-
-app.post('/api/admin/scouting-fse/config', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { rawCurl } = req.body;
-    if (!rawCurl || typeof rawCurl !== 'string') {
-      return res.status(400).json({ error: 'Fornire una stringa cURL valida.' });
-    }
-
-    const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-    if (existing) {
-      await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
-    } else {
-      await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
-    }
-
-    const parsed = parseCurlCommand(rawCurl);
-    res.json({
-      message: 'Configurazione cURL salvata con successo!',
-      parsedSummary: parsed ? {
-        url: parsed.url,
-        hasCookies: !!parsed.cookies,
-        headersCount: Object.keys(parsed.headers || {}).length
-      } : null
-    });
-  } catch (error) {
-    console.error('Errore salvataggio config Scouting FSE:', error);
-    res.status(500).json({ error: 'Errore salvataggio configurazione Scouting FSE' });
-  }
-});
-
-app.post('/api/admin/scouting-fse/ordina-tutti', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { items, rawCurl: inputCurl } = req.body;
-
-    let rawCurl = inputCurl;
-
-    if (rawCurl) {
-      const existing = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-      if (existing) {
-        await db.run('UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?', [rawCurl, 'scouting_fse_curl']);
-      } else {
-        await db.run('INSERT INTO configurazione (chiave, valore) VALUES (?, ?)', ['scouting_fse_curl', rawCurl]);
-      }
-    } else {
-      const config = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['scouting_fse_curl']);
-      rawCurl = config?.valore || null;
-    }
-
-    let targetItems = items;
-    if (!targetItems || targetItems.length === 0) {
-      targetItems = await db.all(`
-        SELECT p.*,
-          COALESCE((
-            SELECT SUM(dp.quantita)
-            FROM dettagli_prenotazioni dp
-            JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-            WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-          ), 0) as quantita_prenotata
-        FROM prodotti p
-        WHERE (p.usato = 0 OR p.usato IS NULL)
-          AND (
-            p.quantita_magazzino = 0 
-            OR p.quantita_magazzino < 0
-            OR COALESCE((
-              SELECT SUM(dp.quantita)
-              FROM dettagli_prenotazioni dp
-              JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-              WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-            ), 0) > COALESCE(p.quantita_magazzino, 999999)
-          )
-      `);
-    }
-
-    const result = await sendOrderToScoutingFse(rawCurl, targetItems);
-
-    res.json({
-      success: true,
-      message: `Elaborati ${result.total} articoli (${result.successfulCount} aggiunti al carrello Scouting FSE)!`,
-      details: result
-    });
-  } catch (error) {
-    console.error('Errore invio Scouting FSE:', error);
-    res.status(500).json({ error: error.message || 'Errore nell\'invio dell\'ordine a Scouting FSE' });
-  }
-});
-
-app.post('/api/admin/scouting-fse/sincronizza-disponibilita', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const result = await syncScoutingFseStock(db);
-    res.json({
-      success: true,
-      message: `Sincronizzazione completata su ${result.checkedCount} articoli (${result.updatedCount} aggiornati).`,
-      result
-    });
-  } catch (error) {
-    console.error('Errore sincronizzazione disponibilità Scouting FSE:', error);
-    res.status(500).json({ error: 'Errore sincronizzazione disponibilità Scouting FSE' });
   }
 });
 

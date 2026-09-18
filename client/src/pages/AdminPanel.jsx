@@ -50,7 +50,7 @@ export default function AdminPanel({ onLoggedIn }) {
           className={`tab-btn ${activeTab === 'tobuy' ? 'active' : ''}`}
           onClick={() => setActiveTab('tobuy')}
         >
-          🛒 Da Acquistare (Scouting FSE)
+          🛒 Da Acquistare
         </button>
         <button 
           className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}

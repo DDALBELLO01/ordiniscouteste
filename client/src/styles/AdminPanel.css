@@ -411,17 +411,6 @@ table th.sortable-th:hover {
   font-size: 14px;
 }
 
-.btn-scouting-order {
-  background-color: #319795 !important;
-  color: white !important;
-  font-size: 15px !important;
-  padding: 10px 18px !important;
-}
-
-.btn-scouting-order:hover {
-  background-color: #2c7a7b !important;
-}
-
 table td {
   padding: 12px;
   border-bottom: 1px solid #e2e8f0;
