@@ -89,7 +89,7 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>&copy; 2024 Ordini Scout. Realizzato con ❤️</p>
+        <p>&copy; 2026 Scout Este. Realizzato con ❤️</p>
       </footer>
     </div>
   )

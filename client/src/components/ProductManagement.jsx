@@ -201,6 +201,10 @@ export default function ProductManagement() {
     if (sortConfig.field !== field) return <span className="sort-icon"> ⇅</span>
     return <span className="sort-icon">{sortConfig.direction === 'asc' ? ' ▲' : ' ▼'}</span>
   }
+  const updateFilter = (name, value) => {
+    setFilters(current => ({ ...current, [name]: value }))
+  }
+
   const filterOptions = useMemo(() => ({
     tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
     branche: [...new Set(products.map(product => product.branca).filter(Boolean))].sort(),
@@ -231,7 +235,9 @@ export default function ProductManagement() {
       (!filters.branca || product.branca === filters.branca) &&
       (!filters.taglia || product.taglia === filters.taglia) &&
       (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
-      (!filters.mostraHome || (filters.mostraHome === 'visibile' ? product.mostra_home !== 0 : product.mostra_home === 0)) &&
+      (!filters.mostraHome || (filters.mostraHome === 'visibile'
+        ? product.mostra_home !== 0 && product.mostra_home !== false
+        : product.mostra_home === 0 || product.mostra_home === false)) &&
       matchesGiacenza
   }), [products, filters])
 

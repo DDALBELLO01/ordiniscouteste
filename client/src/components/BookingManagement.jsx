@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import '../styles/components.css'
 
@@ -10,6 +10,8 @@ export default function BookingManagement() {
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [viewMode, setViewMode] = useState('attive') // 'attive' | 'archiviate'
   const [archiving, setArchiving] = useState(false)
+  const [showFilters, setShowFilters] = useState(true)
+  const [filters, setFilters] = useState({ search: '', branca: '', dataDa: '', dataA: '' })
 
   const [sortConfig, setSortConfig] = useState({ field: 'data_prenotazione', direction: 'desc' })
 
@@ -23,6 +25,14 @@ export default function BookingManagement() {
   const renderSortIndicator = (field) => {
     if (sortConfig.field !== field) return <span className="sort-icon"> ⇅</span>
     return <span className="sort-icon">{sortConfig.direction === 'asc' ? ' ▲' : ' ▼'}</span>
+  }
+
+  const updateFilter = (name, value) => {
+    setFilters(current => ({ ...current, [name]: value }))
+  }
+
+  const resetFilters = () => {
+    setFilters({ search: '', branca: '', dataDa: '', dataA: '' })
   }
 
   useEffect(() => {
@@ -103,7 +113,24 @@ export default function BookingManagement() {
     }
   }
 
-  const sortedBookings = [...bookings].sort((a, b) => {
+  const filterOptions = useMemo(() => (
+    [...new Set(bookings.map(booking => booking.branca_riferimento).filter(Boolean))].sort()
+  ), [bookings])
+
+  const filteredBookings = useMemo(() => bookings.filter(booking => {
+    const search = filters.search.trim().toLowerCase()
+    const matchesSearch = !search || [booking.nome_prenotante, booking.email_prenotante, booking.branca_riferimento]
+      .filter(Boolean)
+      .some(value => value.toLowerCase().includes(search))
+    const bookingDate = booking.data_prenotazione ? new Date(booking.data_prenotazione).toISOString().slice(0, 10) : ''
+
+    return matchesSearch &&
+      (!filters.branca || booking.branca_riferimento === filters.branca) &&
+      (!filters.dataDa || bookingDate >= filters.dataDa) &&
+      (!filters.dataA || bookingDate <= filters.dataA)
+  }), [bookings, filters])
+
+  const sortedBookings = [...filteredBookings].sort((a, b) => {
     let valA = a[sortConfig.field]
     let valB = b[sortConfig.field]
 
@@ -130,7 +157,7 @@ export default function BookingManagement() {
   return (
     <div className="booking-management">
       <div className="management-header">
-        <h3>Gestione Prenotazioni ({bookings.length})</h3>
+        <h3>Gestione Prenotazioni ({filteredBookings.length}{filteredBookings.length !== bookings.length ? ` di ${bookings.length}` : ''})</h3>
         <div className="header-controls">
           <div style={{ display: 'flex', gap: '6px' }}>
             <button
@@ -167,6 +194,42 @@ export default function BookingManagement() {
           </button>
         </div>
       </div>
+
+      <div className="filters-header">
+        <button
+          type="button"
+          className="btn-toggle-filters"
+          onClick={() => setShowFilters(!showFilters)}
+          aria-expanded={showFilters}
+        >
+          <span>🔍 {showFilters ? 'Nascondi filtri e ricerca' : 'Mostra filtri e ricerca'}</span>
+          <span className="toggle-icon">{showFilters ? '▲' : '▼'}</span>
+        </button>
+      </div>
+
+      {showFilters && (
+        <div className="catalog-filters admin-filters booking-filters">
+          <div className="filter-row">
+            <input
+              type="search"
+              value={filters.search}
+              onChange={(e) => updateFilter('search', e.target.value)}
+              placeholder="Cerca per nome, email o branca"
+              aria-label="Cerca prenotazioni"
+            />
+            <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
+              <option value="">Tutte le branche</option>
+              {filterOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <input type="date" value={filters.dataDa} onChange={(e) => updateFilter('dataDa', e.target.value)} aria-label="Data prenotazione da" />
+            <input type="date" value={filters.dataA} onChange={(e) => updateFilter('dataA', e.target.value)} aria-label="Data prenotazione a" />
+          </div>
+          <div className="filter-row booking-filter-actions">
+            <span className="catalog-summary">{filteredBookings.length} prenotazioni visualizzate</span>
+            <button type="button" className="btn-filter-reset" onClick={resetFilters}>Azzera filtri</button>
+          </div>
+        </div>
+      )}
 
       <div className="bookings-table">
         <table>
