@@ -46,12 +46,12 @@ export async function sendBookingEmail(email, bookingData) {
       <tr>
         <td style="padding: 8px; border-bottom: 1px solid #ddd;">${item.nome}</td>
         <td style="padding: 8px; border-bottom: 1px solid #ddd;">${item.quantita}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd;">€ ${item.prezzo_unitario.toFixed(2)}</td>
-        <td style="padding: 8px; border-bottom: 1px solid #ddd;">€ ${(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">€ ${Number(item.prezzo_unitario || 0).toFixed(2)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">€ ${(Number(item.quantita || 0) * Number(item.prezzo_unitario || 0)).toFixed(2)}</td>
       </tr>
     `).join('');
 
-    const totale = bookingData.items.reduce((sum, item) => sum + (item.quantita * item.prezzo_unitario), 0);
+    const totale = bookingData.items.reduce((sum, item) => sum + (Number(item.quantita || 0) * Number(item.prezzo_unitario || 0)), 0);
 
     const htmlContent = `
       <html>
@@ -201,7 +201,7 @@ export async function sendBrancaSummaryEmail(email, branca, bookings) {
 
   try {
     const totaleGenerale = bookings.reduce(
-      (sum, b) => sum + b.items.reduce((s, i) => s + i.quantita * i.prezzo_unitario, 0),
+      (sum, b) => sum + b.items.reduce((s, i) => s + Number(i.quantita || 0) * Number(i.prezzo_unitario || 0), 0),
       0
     );
 
@@ -210,11 +210,11 @@ export async function sendBrancaSummaryEmail(email, branca, bookings) {
         <tr>
           <td style="padding: 6px; border-bottom: 1px solid #ddd;">${item.nome}${item.specialita ? ` - ${item.specialita}` : ''}</td>
           <td style="padding: 6px; border-bottom: 1px solid #ddd;">${item.quantita}</td>
-          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${item.prezzo_unitario.toFixed(2)}</td>
-          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${Number(item.prezzo_unitario || 0).toFixed(2)}</td>
+          <td style="padding: 6px; border-bottom: 1px solid #ddd;">€ ${(Number(item.quantita || 0) * Number(item.prezzo_unitario || 0)).toFixed(2)}</td>
         </tr>
       `).join('');
-      const totaleBooking = b.items.reduce((s, i) => s + i.quantita * i.prezzo_unitario, 0);
+      const totaleBooking = b.items.reduce((s, i) => s + Number(i.quantita || 0) * Number(i.prezzo_unitario || 0), 0);
 
       return `
         <div style="margin-bottom: 20px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">

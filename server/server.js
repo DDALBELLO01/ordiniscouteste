@@ -280,11 +280,16 @@ app.get('/api/admin/prenotazioni', async (req, res) => {
 app.post('/api/admin/prenotazioni/archivia-tutte', async (req, res) => {
   try {
     const db = getDatabase();
-    const riepilogInviati = await inviaRiepiloghiChiusuraBranche(db);
+    const riepiloghi = await inviaRiepiloghiChiusuraBranche(db);
     const result = await db.run(
       `UPDATE prenotazioni SET archiviata = 1, data_archiviazione = CURRENT_TIMESTAMP WHERE (archiviata = 0 OR archiviata IS NULL)`
     );
-    res.json({ message: 'Prenotazioni archiviate con successo', archiviate: result.changes, riepilogInviati });
+    res.json({
+      message: 'Prenotazioni archiviate con successo',
+      archiviate: result.changes,
+      riepilogInviati: riepiloghi.inviati,
+      riepiloghi
+    });
   } catch (error) {
     console.error('Errore archiviazione prenotazioni:', error);
     res.status(500).json({ error: 'Errore archiviazione prenotazioni' });
@@ -703,17 +708,20 @@ async function inviaRiepiloghiChiusuraBranche(db) {
   let emailMap = {};
   try { emailMap = row?.valore ? JSON.parse(row.valore) : {}; } catch { emailMap = {}; }
 
-  const branche = Object.keys(emailMap).filter(branca => emailMap[branca]);
-  if (branche.length === 0) return 0;
+  const branche = Object.keys(emailMap).filter(branca => String(emailMap[branca] || '').trim());
+  const riepiloghi = { inviati: 0, senzaOrdini: [], falliti: [] };
+  if (branche.length === 0) return riepiloghi;
 
-  let inviati = 0;
   for (const branca of branche) {
-    const destinatario = emailMap[branca];
+    const destinatario = String(emailMap[branca]).trim();
     const prenotazioni = await db.all(
       `SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL) AND (branca_riferimento = ? OR branca_riferimento = 'Tutti')`,
       [branca]
     );
-    if (prenotazioni.length === 0) continue;
+    if (prenotazioni.length === 0) {
+      riepiloghi.senzaOrdini.push(branca);
+      continue;
+    }
 
     const bookings = [];
     for (const prenotazione of prenotazioni) {
@@ -725,10 +733,14 @@ async function inviaRiepiloghiChiusuraBranche(db) {
     }
 
     const inviata = await sendBrancaSummaryEmail(destinatario, branca, bookings);
-    if (inviata) inviati++;
+    if (inviata) {
+      riepiloghi.inviati++;
+    } else {
+      riepiloghi.falliti.push(branca);
+    }
   }
 
-  return inviati;
+  return riepiloghi;
 }
 
 app.get('/api/health', (req, res) => {
