@@ -280,10 +280,11 @@ app.get('/api/admin/prenotazioni', async (req, res) => {
 app.post('/api/admin/prenotazioni/archivia-tutte', async (req, res) => {
   try {
     const db = getDatabase();
+    const riepilogInviati = await inviaRiepiloghiChiusuraBranche(db);
     const result = await db.run(
       `UPDATE prenotazioni SET archiviata = 1, data_archiviazione = CURRENT_TIMESTAMP WHERE (archiviata = 0 OR archiviata IS NULL)`
     );
-    res.json({ message: 'Prenotazioni archiviate con successo', archiviate: result.changes });
+    res.json({ message: 'Prenotazioni archiviate con successo', archiviate: result.changes, riepilogInviati });
   } catch (error) {
     console.error('Errore archiviazione prenotazioni:', error);
     res.status(500).json({ error: 'Errore archiviazione prenotazioni' });
@@ -630,27 +631,20 @@ app.put('/api/admin/config/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
     const { enabled } = req.body;
-    const previous = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['prenotazioni_abilitate']);
-    const eraAbilitata = previous?.valore === 'true';
 
     await db.run(
       'UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?',
       [enabled ? 'true' : 'false', 'prenotazioni_abilitate']
     );
 
-    let riepilogInviati = 0;
-    if (eraAbilitata && !enabled) {
-      riepilogInviati = await inviaRiepiloghiChiusuraBranche(db);
-    }
-
-    res.json({ message: 'Configurazione aggiornata', riepilogInviati });
+    res.json({ message: 'Configurazione aggiornata' });
   } catch (error) {
     console.error('Errore aggiornamento configurazione:', error);
     res.status(500).json({ error: 'Errore aggiornamento configurazione' });
   }
 });
 
-// Impostazioni: email dei capi unità per branca, usate per il riepilogo alla chiusura prenotazioni
+// Impostazioni: email dei capi unità per branca, usate per il riepilogo all'archiviazione
 app.get('/api/admin/config/email-branche', async (req, res) => {
   try {
     const db = getDatabase();
@@ -703,7 +697,7 @@ app.post('/api/pagamenti/carta/crea-intento', async (req, res) => {
   }
 });
 
-// Invia il riepilogo ordini al capo unità di ciascuna branca configurata
+// Invia il riepilogo prima di archiviare gli ordini attivi
 async function inviaRiepiloghiChiusuraBranche(db) {
   const row = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['email_capi_branca']);
   let emailMap = {};

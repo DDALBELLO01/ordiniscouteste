@@ -64,14 +64,10 @@ export default function BookingManagement() {
   const handleToggleBookings = async () => {
     setTogglingStatus(true)
     try {
-      const chiusura = bookingsEnabled // se erano abilitate e ora si disabilitano, è una chiusura
       const response = await axios.put('/api/admin/config/prenotazioni', {
         enabled: !bookingsEnabled
       })
       setBookingsEnabled(!bookingsEnabled)
-      if (chiusura && response.data.riepilogInviati > 0) {
-        alert(`Prenotazioni chiuse. Inviati ${response.data.riepilogInviati} riepiloghi ai capi unità configurati.`)
-      }
     } catch (error) {
       console.error('Errore:', error)
       alert('Errore aggiornamento configurazione')
@@ -103,7 +99,10 @@ export default function BookingManagement() {
     setArchiving(true)
     try {
       const response = await axios.post('/api/admin/prenotazioni/archivia-tutte')
-      alert(`${response.data.archiviate} prenotazioni archiviate con successo.`)
+      const riepilogo = response.data.riepilogInviati > 0
+        ? ` Inviati ${response.data.riepilogInviati} riepiloghi ai capi unità configurati.`
+        : ''
+      alert(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}`)
       fetchBookings(viewMode)
     } catch (error) {
       console.error('Errore archiviazione:', error)
