@@ -310,7 +310,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
   })
   const [selectedAddProductId, setSelectedAddProductId] = useState('')
 
-  const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
+  const branches = ['Cerchio', 'Branco', 'Riparto Ginestra', 'Riparto Sorgente', 'Riparto Atheste', 'Clan', 'Fuoco', 'RS']
 
   useEffect(() => {
     fetchDetails()

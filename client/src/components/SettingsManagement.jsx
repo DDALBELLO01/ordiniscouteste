@@ -3,7 +3,7 @@ import axios from 'axios'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
-const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
+const branches = ['Cerchio', 'Branco', 'Riparto Ginestra', 'Riparto Sorgente', 'Riparto Atheste', 'Clan', 'Fuoco', 'RS']
 
 export default function SettingsManagement() {
   const { showMessage, dialogElement } = useAppDialog()
@@ -18,7 +18,14 @@ export default function SettingsManagement() {
   const fetchEmails = async () => {
     try {
       const response = await axios.get('/api/admin/config/email-branche')
-      setEmails(response.data.emails || {})
+      const savedEmails = response.data.emails || {}
+      setEmails({
+        ...savedEmails,
+        Branco: savedEmails.Branco || savedEmails.Lupetti || '',
+        Cerchio: savedEmails.Cerchio || savedEmails.Coccinelle || '',
+        Clan: savedEmails.Clan || savedEmails.Rover || '',
+        RS: savedEmails.RS || savedEmails.Capi || ''
+      })
       setLoading(false)
     } catch (error) {
       console.error('Errore caricamento email branche:', error)
@@ -33,7 +40,12 @@ export default function SettingsManagement() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await axios.put('/api/admin/config/email-branche', { emails })
+      const normalizedEmails = { ...emails }
+      const legacyBranches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
+      legacyBranches.forEach(legacyBranch => {
+        delete normalizedEmails[legacyBranch]
+      })
+      await axios.put('/api/admin/config/email-branche', { emails: normalizedEmails })
       showMessage('Email dei capi unità salvate con successo!', 'Salvataggio completato')
     } catch (error) {
       console.error('Errore salvataggio email branche:', error)

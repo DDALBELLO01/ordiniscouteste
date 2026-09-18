@@ -718,10 +718,21 @@ async function inviaRiepiloghiChiusuraBranche(db) {
     'SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL)'
   );
 
+  const aliasBranche = {
+    coccinelle: 'cerchio',
+    lupetti: 'branco',
+    rover: 'clan',
+    capi: 'rs'
+  };
+  const normalizzaBranca = valore => {
+    const normalizzata = String(valore || '').trim().toLocaleLowerCase('it-IT');
+    return aliasBranche[normalizzata] || normalizzata;
+  };
+
   for (const { nome: branca, email: destinatario } of branche) {
-    const brancaNormalizzata = branca.toLocaleLowerCase('it-IT');
+    const brancaNormalizzata = normalizzaBranca(branca);
     const prenotazioni = prenotazioniAttive.filter(prenotazione => {
-      const riferimento = String(prenotazione.branca_riferimento || '').trim().toLocaleLowerCase('it-IT');
+      const riferimento = normalizzaBranca(prenotazione.branca_riferimento);
       return riferimento === brancaNormalizzata || riferimento === 'tutti';
     });
     if (prenotazioni.length === 0) {
