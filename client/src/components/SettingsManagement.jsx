@@ -53,12 +53,6 @@ export default function SettingsManagement() {
 
       <div className="detail-section">
         <h4>📧 Email Capi Unità per Branca</h4>
-        <p style={{ color: '#4a5568', fontSize: '14px' }}>
-          Quando le prenotazioni vengono chiuse (disabilitate), viene inviato automaticamente
-          un riepilogo di tutti gli ordini di ciascuna branca all'indirizzo email indicato qui sotto.
-          Lascia vuoto il campo per non inviare alcun riepilogo a quella branca.
-        </p>
-
         <div className="form-group-grid">
           {branches.map(branca => (
             <div className="form-group" key={branca}>
