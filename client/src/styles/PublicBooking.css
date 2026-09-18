@@ -330,6 +330,22 @@
   padding: 2px 7px;
 }
 
+.size-guide-button {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid #2c5282;
+  border-radius: 4px;
+  background: white;
+  color: #2c5282;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.size-guide-button:hover {
+  background: #ebf8ff;
+}
+
 .product-order {
   text-align: right;
 }

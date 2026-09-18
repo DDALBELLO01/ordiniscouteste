@@ -2,12 +2,34 @@ import { useMemo, useState } from 'react'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
+function sizeSortKey(value) {
+  const text = String(value || '').trim().toUpperCase()
+  const ageMatch = text.match(/(\d+(?:[.,]\d+)?).*ANNI?/)
+  if (ageMatch) return { group: 0, value: Number(ageMatch[1].replace(',', '.')), text }
+
+  const numericMatch = text.match(/\d+(?:[.,]\d+)?/)
+  if (numericMatch) return { group: 2, value: Number(numericMatch[0].replace(',', '.')), text }
+
+  const sizeOrder = ['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+  const sizeIndex = sizeOrder.findIndex(size => text === size || text.startsWith(`${size}/`) || text.startsWith(`${size}-`))
+  return { group: 1, value: sizeIndex >= 0 ? sizeIndex : sizeOrder.length, text }
+}
+
+function compareSizes(first, second) {
+  const firstKey = sizeSortKey(first)
+  const secondKey = sizeSortKey(second)
+  if (firstKey.group !== secondKey.group) return firstKey.group - secondKey.group
+  if (firstKey.value !== secondKey.value) return firstKey.value - secondKey.value
+  return firstKey.text.localeCompare(secondKey.text, 'it', { numeric: true })
+}
+
 export default function ProductSelector({ products, onAddItem }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [quantities, setQuantities] = useState({})
   const [sizePicker, setSizePicker] = useState(null)
   const [specialitaPicker, setSpecialitaPicker] = useState(null)
   const [specialitaName, setSpecialitaName] = useState('')
+  const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
@@ -71,7 +93,7 @@ export default function ProductSelector({ products, onAddItem }) {
   const options = useMemo(() => ({
     tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
     branche: [...new Set(products.map(product => product.branca).filter(Boolean))].sort(),
-    taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort()
+    taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort(compareSizes)
   }), [products])
 
   const filteredProducts = useMemo(() => products.filter(product => {
@@ -220,7 +242,8 @@ export default function ProductSelector({ products, onAddItem }) {
           })
 
           const available = availableItems.length > 0
-          const sizes = product.items.map(item => item.taglia).filter(Boolean)
+          const sortedItems = [...product.items].sort((first, second) => compareSizes(first.taglia, second.taglia))
+          const sizes = sortedItems.map(item => item.taglia).filter(Boolean)
           const isUsato = product.usato === 1 || product.usato === true
           const localStock = product.quantita_magazzino
 
@@ -251,6 +274,11 @@ export default function ProductSelector({ products, onAddItem }) {
                   {isUsato && <span className="badge-usato">Articolo usato</span>}
                 </div>
                 <p className="product-stock">{stockText}</p>
+                {product.guida_taglie_url && (
+                  <button type="button" className="size-guide-button" onClick={() => setSizeGuideUrl(product.guida_taglie_url)}>
+                    Guida alle taglie
+                  </button>
+                )}
               </div>
               <div className="product-order">
                 <p className="product-price">€ {product.prezzo.toFixed(2)}</p>
@@ -276,7 +304,7 @@ export default function ProductSelector({ products, onAddItem }) {
             </div>
             <p>{sizePicker.nome}{sizePicker.specialita ? ` - ${sizePicker.specialita}` : ''}</p>
             <div className="size-picker-options">
-              {sizePicker.items.map(item => {
+              {[...sizePicker.items].sort((first, second) => compareSizes(first.taglia, second.taglia)).map(item => {
                 const isUsatoItem = item.usato === 1 || item.usato === true
                 const isOutLocalItem = item.quantita_magazzino !== null && item.quantita_magazzino !== undefined && item.quantita_magazzino <= 0
                 const itemAvailable = !(isUsatoItem && isOutLocalItem)
@@ -332,6 +360,12 @@ export default function ProductSelector({ products, onAddItem }) {
           </div>
         )
       })()}
+      {sizeGuideUrl && (
+        <div className="size-guide-overlay" role="dialog" aria-modal="true" aria-label="Guida alle taglie" onClick={() => setSizeGuideUrl(null)}>
+          <button type="button" className="size-guide-close" onClick={() => setSizeGuideUrl(null)} aria-label="Chiudi guida taglie">×</button>
+          <img src={sizeGuideUrl} alt="Guida alle taglie" className="size-guide-image" onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
       {dialogElement}
     </div>
   )
