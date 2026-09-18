@@ -708,16 +708,22 @@ async function inviaRiepiloghiChiusuraBranche(db) {
   let emailMap = {};
   try { emailMap = row?.valore ? JSON.parse(row.valore) : {}; } catch { emailMap = {}; }
 
-  const branche = Object.keys(emailMap).filter(branca => String(emailMap[branca] || '').trim());
-  const riepiloghi = { inviati: 0, senzaOrdini: [], falliti: [] };
+  const branche = Object.keys(emailMap)
+    .map(branca => ({ nome: String(branca).trim(), email: String(emailMap[branca] || '').trim() }))
+    .filter(({ nome, email }) => nome && email);
+  const riepiloghi = { inviati: 0, senzaOrdini: [], falliti: [], errori: {} };
   if (branche.length === 0) return riepiloghi;
 
-  for (const branca of branche) {
-    const destinatario = String(emailMap[branca]).trim();
-    const prenotazioni = await db.all(
-      `SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL) AND (branca_riferimento = ? OR branca_riferimento = 'Tutti')`,
-      [branca]
-    );
+  const prenotazioniAttive = await db.all(
+    'SELECT * FROM prenotazioni WHERE (archiviata = 0 OR archiviata IS NULL)'
+  );
+
+  for (const { nome: branca, email: destinatario } of branche) {
+    const brancaNormalizzata = branca.toLocaleLowerCase('it-IT');
+    const prenotazioni = prenotazioniAttive.filter(prenotazione => {
+      const riferimento = String(prenotazione.branca_riferimento || '').trim().toLocaleLowerCase('it-IT');
+      return riferimento === brancaNormalizzata || riferimento === 'tutti';
+    });
     if (prenotazioni.length === 0) {
       riepiloghi.senzaOrdini.push(branca);
       continue;
@@ -737,6 +743,7 @@ async function inviaRiepiloghiChiusuraBranche(db) {
       riepiloghi.inviati++;
     } else {
       riepiloghi.falliti.push(branca);
+      riepiloghi.errori[branca] = 'Il provider SMTP ha rifiutato o non ha completato l’invio';
     }
   }
 

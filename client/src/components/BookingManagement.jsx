@@ -108,7 +108,10 @@ export default function BookingManagement() {
       const falliti = riepiloghi.falliti?.length
         ? ` Errore invio: ${riepiloghi.falliti.join(', ')}.`
         : ''
-      showMessage(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}${falliti}`, 'Archiviazione completata')
+      const senzaOrdini = riepiloghi.senzaOrdini?.length
+        ? ` Nessun ordine per: ${riepiloghi.senzaOrdini.join(', ')}.`
+        : ''
+      showMessage(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}${falliti}${senzaOrdini}`, 'Archiviazione completata')
       fetchBookings(viewMode)
     } catch (error) {
       console.error('Errore archiviazione:', error)
