@@ -162,6 +162,10 @@ export async function initializeDatabase() {
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
     ['email_capi_branca', '{}']
   );
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['guida_taglie_url', '']
+  );
   // Predisposizione futura pagamento con carta: funzionalità non ancora abilitata/visibile
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
@@ -294,6 +298,10 @@ async function initializePostgresDatabase() {
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
     ['email_capi_branca', '{}']
+  );
+  await db.run(
+    'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
+    ['guida_taglie_url', '']
   );
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',

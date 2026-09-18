@@ -6,10 +6,22 @@ export default function ToBuyManagement() {
   const [itemsToBuy, setItemsToBuy] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterView, setFilterView] = useState('richiesti')
+  const [sizeGuideUrl, setSizeGuideUrl] = useState('')
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false)
 
   useEffect(() => {
     fetchItemsToBuy(filterView)
+    fetchSizeGuideUrl()
   }, [filterView])
+
+  const fetchSizeGuideUrl = async () => {
+    try {
+      const response = await axios.get('/api/config/guida-taglie')
+      setSizeGuideUrl(response.data.url || '')
+    } catch (error) {
+      console.error('Errore caricamento guida taglie:', error)
+    }
+  }
 
   const fetchItemsToBuy = async (viewMode = filterView) => {
     try {
@@ -24,6 +36,27 @@ export default function ToBuyManagement() {
     }
   }
 
+  const sizeSortKey = (value) => {
+    const text = String(value || '').trim().toUpperCase()
+    const ageMatch = text.match(/(\d+(?:[.,]\d+)?).*ANNI?/)
+    if (ageMatch) return { group: 0, value: Number(ageMatch[1].replace(',', '.')), text }
+
+    const numericMatch = text.match(/\d+(?:[.,]\d+)?/)
+    if (numericMatch) return { group: 2, value: Number(numericMatch[0].replace(',', '.')), text }
+
+    const sizeOrder = ['XXXS', 'XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
+    const sizeIndex = sizeOrder.findIndex(size => text === size || text.startsWith(`${size}/`) || text.startsWith(`${size}-`))
+    return { group: 1, value: sizeIndex >= 0 ? sizeIndex : sizeOrder.length, text }
+  }
+
+  const sortedItems = [...itemsToBuy].sort((first, second) => {
+    const firstSize = sizeSortKey(first.taglia)
+    const secondSize = sizeSortKey(second.taglia)
+    if (firstSize.group !== secondSize.group) return firstSize.group - secondSize.group
+    if (firstSize.value !== secondSize.value) return firstSize.value - secondSize.value
+    return firstSize.text.localeCompare(secondSize.text, 'it', { numeric: true })
+  })
+
   if (loading) return <div className="loading">Caricamento lista da acquistare...</div>
 
   return (
@@ -36,6 +69,11 @@ export default function ToBuyManagement() {
             <option value="richiesti">Solo richiesti dai clienti</option>
             <option value="tutti_esauriti">Tutti con giacenza 0</option>
           </select>
+          {sizeGuideUrl && (
+            <button type="button" className="btn-secondary" onClick={() => setSizeGuideOpen(true)}>
+              Guida alle taglie
+            </button>
+          )}
         </div>
       </div>
 
@@ -56,7 +94,7 @@ export default function ToBuyManagement() {
             </tr>
           </thead>
           <tbody>
-            {itemsToBuy.map(product => (
+            {sortedItems.map(product => (
               <tr key={product.id}>
                 <td><strong>{product.nome}</strong></td>
                 <td>{product.tipologia}</td>
@@ -74,6 +112,12 @@ export default function ToBuyManagement() {
           </tbody>
         </table>
       </div>
+      {sizeGuideOpen && (
+        <div className="size-guide-overlay" role="dialog" aria-modal="true" aria-label="Guida alle taglie" onClick={() => setSizeGuideOpen(false)}>
+          <button type="button" className="size-guide-close" onClick={() => setSizeGuideOpen(false)} aria-label="Chiudi guida taglie">×</button>
+          <img src={sizeGuideUrl} alt="Guida alle taglie" className="size-guide-image" onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
     </div>
   )
 }

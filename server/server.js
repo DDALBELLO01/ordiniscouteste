@@ -65,6 +65,17 @@ app.get('/api/config/prenotazioni-abilitate', async (req, res) => {
   }
 });
 
+app.get('/api/config/guida-taglie', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const result = await db.get('SELECT valore FROM configurazione WHERE chiave = ?', ['guida_taglie_url']);
+    res.json({ url: result?.valore || '' });
+  } catch (error) {
+    console.error('Errore lettura guida taglie:', error);
+    res.status(500).json({ error: 'Errore lettura guida taglie' });
+  }
+});
+
 app.post('/api/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
@@ -520,6 +531,24 @@ app.put('/api/admin/config/email-branche', async (req, res) => {
   } catch (error) {
     console.error('Errore salvataggio email branche:', error);
     res.status(500).json({ error: 'Errore salvataggio email branche' });
+  }
+});
+
+app.put('/api/admin/config/guida-taglie', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const url = typeof req.body.url === 'string' ? req.body.url.trim() : '';
+    if (url && !/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: 'L’URL della guida taglie non è valido' });
+    }
+    await db.run(
+      'UPDATE configurazione SET valore = ?, updated_at = CURRENT_TIMESTAMP WHERE chiave = ?',
+      [url, 'guida_taglie_url']
+    );
+    res.json({ message: 'Guida taglie aggiornata' });
+  } catch (error) {
+    console.error('Errore salvataggio guida taglie:', error);
+    res.status(500).json({ error: 'Errore salvataggio guida taglie' });
   }
 });
 

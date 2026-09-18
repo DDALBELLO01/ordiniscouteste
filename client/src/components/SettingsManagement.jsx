@@ -10,6 +10,7 @@ export default function SettingsManagement() {
   const [emails, setEmails] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [sizeGuideUrl, setSizeGuideUrl] = useState('')
 
   useEffect(() => {
     fetchEmails()
@@ -26,6 +27,8 @@ export default function SettingsManagement() {
         Clan: savedEmails.Clan || savedEmails.Rover || '',
         RS: savedEmails.RS || savedEmails.Capi || ''
       })
+      const guideResponse = await axios.get('/api/config/guida-taglie')
+      setSizeGuideUrl(guideResponse.data.url || '')
       setLoading(false)
     } catch (error) {
       console.error('Errore caricamento email branche:', error)
@@ -46,6 +49,7 @@ export default function SettingsManagement() {
         delete normalizedEmails[legacyBranch]
       })
       await axios.put('/api/admin/config/email-branche', { emails: normalizedEmails })
+      await axios.put('/api/admin/config/guida-taglie', { url: sizeGuideUrl.trim() })
       showMessage('Email dei capi unità salvate con successo!', 'Salvataggio completato')
     } catch (error) {
       console.error('Errore salvataggio email branche:', error)
@@ -85,6 +89,25 @@ export default function SettingsManagement() {
         <div className="form-actions">
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? '⏳ Salvataggio...' : '💾 Salva Email Branche'}
+          </button>
+        </div>
+      </div>
+
+      <div className="detail-section">
+        <h4>Guida alle taglie</h4>
+        <p style={{ color: '#4a5568', fontSize: '14px' }}>
+          Inserisci l&apos;URL dell&apos;immagine da mostrare nella lista degli articoli da acquistare.
+        </p>
+        <input
+          type="url"
+          value={sizeGuideUrl}
+          onChange={(event) => setSizeGuideUrl(event.target.value)}
+          placeholder="https://.../guida-taglie.jpg"
+          style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e0', borderRadius: '6px' }}
+        />
+        <div className="form-actions">
+          <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Salvataggio...' : 'Salva guida taglie'}
           </button>
         </div>
       </div>
