@@ -2,6 +2,7 @@ import { Fragment, useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
 import '../styles/components.css'
+import { useAppDialog } from './AppDialog'
 
 function ProductForm({ formRef, formData, setFormData, branches, editingId, handleSave, resetForm }) {
   return (
@@ -70,6 +71,7 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
 }
 
 export default function ProductManagement() {
+  const { showMessage, showConfirm, dialogElement } = useAppDialog()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -134,18 +136,18 @@ export default function ProductManagement() {
       resetForm()
     } catch (error) {
       console.error('Errore salvataggio:', error)
-      alert('Errore: ' + error.response?.data?.error)
+      showMessage('Errore: ' + error.response?.data?.error, 'Errore')
     }
   }
 
   const handleDelete = async (id) => {
-    if (confirm('Confermi eliminazione?')) {
+    if (await showConfirm('Confermi eliminazione?', 'Elimina prodotto')) {
       try {
         await axios.delete(`/api/admin/prodotti/${id}`)
         fetchProducts()
       } catch (error) {
         console.error('Errore eliminazione:', error)
-        alert('Errore: ' + error.response?.data?.error)
+        showMessage('Errore: ' + error.response?.data?.error, 'Errore')
       }
     }
   }
@@ -157,7 +159,7 @@ export default function ProductManagement() {
       await fetchProducts()
     } catch (error) {
       console.error('Errore duplicazione:', error)
-      alert('Errore: ' + error.response?.data?.error)
+      showMessage('Errore: ' + error.response?.data?.error, 'Errore')
     }
   }
 
@@ -274,6 +276,7 @@ export default function ProductManagement() {
   }
 
   return (
+    <>
     <div className="product-management">
       <div className="management-header">
         <h3>Gestione Prodotti ({products.length})</h3>
@@ -420,5 +423,7 @@ export default function ProductManagement() {
         {filteredProducts.length === 0 && <p className="empty-catalog">Nessun articolo corrisponde ai filtri selezionati.</p>}
       </div>
     </div>
+    {dialogElement}
+    </>
   )
 }

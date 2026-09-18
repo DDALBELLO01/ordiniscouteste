@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import '../styles/components.css'
+import { useAppDialog } from './AppDialog'
 
 export default function ProductSelector({ products, onAddItem }) {
+  const { showMessage, dialogElement } = useAppDialog()
   const [quantities, setQuantities] = useState({})
   const [sizePicker, setSizePicker] = useState(null)
   const [specialitaPicker, setSpecialitaPicker] = useState(null)
@@ -31,18 +33,18 @@ export default function ProductSelector({ products, onAddItem }) {
     const isOutScouting = product.esaurito_scouting === 1 || product.esaurito_scouting === true
 
     if (isOutScouting) {
-      alert('Articolo al momento esaurito su Scouting FSE')
+      showMessage('Articolo al momento esaurito su Scouting FSE', 'Articolo non disponibile')
       return
     }
 
     if (isUsato) {
       if (product.quantita_magazzino !== null && product.quantita_magazzino !== undefined) {
         if (product.quantita_magazzino <= 0) {
-          alert('Articolo usato non disponibile')
+          showMessage('Articolo usato non disponibile', 'Articolo non disponibile')
           return
         }
         if (quantity > product.quantita_magazzino) {
-          alert(`Quantità usata massima disponibile: ${product.quantita_magazzino}`)
+          showMessage(`Quantità usata massima disponibile: ${product.quantita_magazzino}`, 'Quantità non disponibile')
           return
         }
       }
@@ -345,6 +347,7 @@ export default function ProductSelector({ products, onAddItem }) {
           </div>
         )
       })()}
+      {dialogElement}
     </div>
   )
 }

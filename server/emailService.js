@@ -22,6 +22,15 @@ export function initializeEmailService() {
     }
   });
 
+  transporter.verify()
+    .then(() => console.log(`SMTP pronto: ${process.env.SMTP_USER}`))
+    .catch(error => console.error('Errore verifica SMTP:', {
+      code: error.code,
+      responseCode: error.responseCode,
+      response: error.response,
+      message: error.message
+    }));
+
   return transporter;
 }
 
@@ -110,7 +119,7 @@ export async function sendBookingEmail(email, bookingData) {
     `;
 
     await sendMailWithRetry({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_USER,
       to: email,
       subject: `Conferma Prenotazione Scout - ${bookingData.id}`,
       html: htmlContent
@@ -119,7 +128,7 @@ export async function sendBookingEmail(email, bookingData) {
     console.log(`Email inviata a: ${email}`);
     return true;
   } catch (error) {
-    console.error('Errore invio email:', error);
+    console.error('Errore invio email:', { code: error.code, responseCode: error.responseCode, response: error.response, message: error.message });
     return false;
   }
 }
@@ -179,7 +188,7 @@ export async function sendAdminNotification(bookingData) {
     `;
 
     await sendMailWithRetry({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_USER,
       to: process.env.SMTP_USER,
       subject: `[ADMIN] Nuova Prenotazione - ${bookingData.id}`,
       html: htmlContent
@@ -187,7 +196,7 @@ export async function sendAdminNotification(bookingData) {
 
     return true;
   } catch (error) {
-    console.error('Errore invio notifica admin:', error);
+    console.error('Errore invio notifica admin:', { code: error.code, responseCode: error.responseCode, response: error.response, message: error.message });
     return false;
   }
 }
@@ -265,7 +274,7 @@ export async function sendBrancaSummaryEmail(email, branca, bookings) {
     `;
 
     await sendMailWithRetry({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_USER,
       to: email,
       subject: `Riepilogo Ordini Chiusura Prenotazioni - ${branca}`,
       html: htmlContent
@@ -274,7 +283,7 @@ export async function sendBrancaSummaryEmail(email, branca, bookings) {
     console.log(`Riepilogo branca ${branca} inviato a: ${email}`);
     return true;
   } catch (error) {
-    console.error(`Errore invio riepilogo branca ${branca}:`, error);
+    console.error(`Errore invio riepilogo branca ${branca}:`, { code: error.code, responseCode: error.responseCode, response: error.response, message: error.message });
     return false;
   }
 }

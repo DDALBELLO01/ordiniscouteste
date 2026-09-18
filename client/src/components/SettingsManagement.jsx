@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import '../styles/components.css'
+import { useAppDialog } from './AppDialog'
 
 const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
 
 export default function SettingsManagement() {
+  const { showMessage, dialogElement } = useAppDialog()
   const [emails, setEmails] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -32,10 +34,10 @@ export default function SettingsManagement() {
     setSaving(true)
     try {
       await axios.put('/api/admin/config/email-branche', { emails })
-      alert('Email dei capi unità salvate con successo!')
+      showMessage('Email dei capi unità salvate con successo!', 'Salvataggio completato')
     } catch (error) {
       console.error('Errore salvataggio email branche:', error)
-      alert('Errore salvataggio: ' + (error.response?.data?.error || error.message))
+      showMessage('Errore salvataggio: ' + (error.response?.data?.error || error.message), 'Errore')
     } finally {
       setSaving(false)
     }
@@ -46,6 +48,7 @@ export default function SettingsManagement() {
   }
 
   return (
+    <>
     <div className="settings-management">
       <div className="management-header">
         <h3>⚙️ Impostazioni</h3>
@@ -74,5 +77,7 @@ export default function SettingsManagement() {
         </div>
       </div>
     </div>
+    {dialogElement}
+    </>
   )
 }

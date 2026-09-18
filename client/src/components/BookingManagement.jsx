@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import '../styles/components.css'
+import { useAppDialog } from './AppDialog'
 
 export default function BookingManagement() {
+  const { showMessage, showConfirm, dialogElement } = useAppDialog()
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedBooking, setSelectedBooking] = useState(null)
@@ -70,14 +72,14 @@ export default function BookingManagement() {
       setBookingsEnabled(!bookingsEnabled)
     } catch (error) {
       console.error('Errore:', error)
-      alert('Errore aggiornamento configurazione')
+      showMessage('Errore aggiornamento configurazione', 'Errore')
     } finally {
       setTogglingStatus(false)
     }
   }
 
   const handleDelete = async (bookingId) => {
-    if (!confirm('Confermi eliminazione della prenotazione? Le quantità limitate verranno ripristinate.')) {
+    if (!await showConfirm('Confermi eliminazione della prenotazione? Le quantità limitate verranno ripristinate.')) {
       return
     }
 
@@ -87,12 +89,12 @@ export default function BookingManagement() {
       fetchBookings()
     } catch (error) {
       console.error('Errore eliminazione:', error)
-      alert('Errore eliminazione prenotazione')
+      showMessage('Errore eliminazione prenotazione', 'Errore')
     }
   }
 
   const handleArchiveAll = async () => {
-    if (!confirm('Confermi l\'archiviazione di TUTTE le prenotazioni attive? Verranno spostate nella sezione "Archiviate" e separate da quelle nuove.')) {
+    if (!await showConfirm('Confermi l\'archiviazione di TUTTE le prenotazioni attive? Verranno spostate nella sezione "Archiviate" e separate da quelle nuove.')) {
       return
     }
 
@@ -106,11 +108,11 @@ export default function BookingManagement() {
       const falliti = riepiloghi.falliti?.length
         ? ` Errore invio: ${riepiloghi.falliti.join(', ')}.`
         : ''
-      alert(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}${falliti}`)
+      showMessage(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}${falliti}`, 'Archiviazione completata')
       fetchBookings(viewMode)
     } catch (error) {
       console.error('Errore archiviazione:', error)
-      alert('Errore archiviazione prenotazioni')
+      showMessage('Errore archiviazione prenotazioni', 'Errore')
     } finally {
       setArchiving(false)
     }
@@ -158,6 +160,7 @@ export default function BookingManagement() {
   }
 
   return (
+    <>
     <div className="booking-management">
       <div className="management-header">
         <h3>Gestione Prenotazioni ({filteredBookings.length}{filteredBookings.length !== bookings.length ? ` di ${bookings.length}` : ''})</h3>
@@ -285,6 +288,8 @@ export default function BookingManagement() {
         />
       )}
     </div>
+    {dialogElement}
+    </>
   )
 }
 
@@ -392,7 +397,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
       if (onBookingUpdated) onBookingUpdated()
     } catch (error) {
       console.error('Errore salvataggio prenotazione:', error)
-      alert('Errore salvataggio: ' + (error.response?.data?.error || error.message))
+      showMessage('Errore salvataggio: ' + (error.response?.data?.error || error.message), 'Errore')
     }
   }
 

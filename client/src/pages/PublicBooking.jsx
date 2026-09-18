@@ -3,8 +3,10 @@ import axios from 'axios'
 import '../styles/PublicBooking.css'
 import ProductSelector from '../components/ProductSelector'
 import BookingForm from '../components/BookingForm'
+import { useAppDialog } from '../components/AppDialog'
 
 export default function PublicBooking({ onCartChange }) {
+  const { showMessage, dialogElement } = useAppDialog()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
@@ -96,12 +98,12 @@ export default function PublicBooking({ onCartChange }) {
       setSubmitted(true)
       setSelectedItems([])
       if (!response.data.emailSent) {
-        alert('Prenotazione salvata, ma non è stato possibile inviare le email. Contatta l’amministratore.')
+        showMessage('Prenotazione salvata, ma non è stato possibile inviare le email. Contatta l’amministratore.', 'Email non inviate')
       }
       setTimeout(() => setSubmitted(false), 5000)
     } catch (error) {
       console.error('Errore prenotazione:', error)
-      alert('Errore nella prenotazione: ' + (error.response?.data?.error || error.message))
+      showMessage('Errore nella prenotazione: ' + (error.response?.data?.error || error.message), 'Errore prenotazione')
     }
   }
 
@@ -181,6 +183,7 @@ export default function PublicBooking({ onCartChange }) {
           </div>
         )}
       </div>
+      {dialogElement}
     </div>
   )
 }
