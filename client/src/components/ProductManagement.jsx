@@ -4,6 +4,32 @@ import axios from 'axios'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
+const parseBranches = (value) => Array.isArray(value)
+  ? value
+  : String(value || '').split(',').map(branch => branch.trim()).filter(Boolean)
+
+function BranchCheckboxes({ value, onChange, branches }) {
+  const selected = parseBranches(value)
+
+  const toggleBranch = (branch) => {
+    const next = selected.includes(branch)
+      ? selected.filter(item => item !== branch)
+      : [...selected, branch]
+    onChange(next)
+  }
+
+  return (
+    <div className="branch-checkboxes">
+      {branches.map(branch => (
+        <label key={branch} className="branch-checkbox">
+          <input type="checkbox" checked={selected.includes(branch)} onChange={() => toggleBranch(branch)} />
+          <span>{branch}</span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
 function ProductForm({ formRef, formData, setFormData, branches, editingId, handleSave, resetForm }) {
   return (
     <form ref={formRef} className="management-form" onSubmit={handleSave}>
@@ -20,10 +46,7 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
       <div className="form-row">
         <div className="form-group">
           <label>Branca:</label>
-          <select value={formData.branca} onChange={(e) => setFormData({...formData, branca: e.target.value})} required>
-            <option value="">Seleziona branca</option>
-            {branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
-          </select>
+          <BranchCheckboxes value={formData.branca} onChange={(branca) => setFormData({...formData, branca})} branches={branches} />
         </div>
         <div className="form-group">
           <label>Taglia:</label>
@@ -75,7 +98,7 @@ export default function ProductManagement() {
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
-    branca: '',
+    branca: [],
     taglia: '',
     usato: '',
     mostraHome: '',
@@ -167,7 +190,7 @@ export default function ProductManagement() {
     setFormData({
       nome: '',
       tipologia: '',
-      branca: '',
+      branca: [],
       taglia: '',
       immagine: '',
       guida_taglie_url: '',
@@ -201,13 +224,14 @@ export default function ProductManagement() {
 
   const filterOptions = useMemo(() => ({
     tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
-    branche: [...new Set(products.map(product => product.branca).filter(Boolean))].sort(),
+    branche: [...new Set(products.flatMap(product => parseBranches(product.branca)))].sort(),
     taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort()
   }), [products])
 
   const filteredProducts = useMemo(() => products.filter(product => {
+    const productBranches = parseBranches(product.branca)
     const search = filters.search.trim().toLowerCase()
-    const matchesSearch = !search || [product.nome, product.tipologia, product.branca, product.taglia]
+    const matchesSearch = !search || [product.nome, product.tipologia, productBranches.join(' '), product.taglia]
       .filter(Boolean)
       .some(value => value.toLowerCase().includes(search))
 
@@ -226,7 +250,7 @@ export default function ProductManagement() {
 
     return matchesSearch &&
       (!filters.tipologia || product.tipologia === filters.tipologia) &&
-      (!filters.branca || product.branca === filters.branca) &&
+      (!filters.branca || productBranches.includes(filters.branca)) &&
       (!filters.taglia || product.taglia === filters.taglia) &&
       (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
       (!filters.mostraHome || (filters.mostraHome === 'visibile'
@@ -255,6 +279,16 @@ export default function ProductManagement() {
     })
     return list
   }, [filteredProducts, sortConfig])
+
+  const productGroups = useMemo(() => {
+    const groups = new Map()
+    sortedProducts.forEach(product => {
+      const key = [product.nome, product.tipologia, product.branca, product.immagine || '', product.guida_taglie_url || '', product.usato, product.mostra_home].join('|')
+      if (!groups.has(key)) groups.set(key, { ...product, variants: [] })
+      groups.get(key).variants.push(product)
+    })
+    return [...groups.values()]
+  }, [sortedProducts])
 
   const resetFilters = () => {
     setFilters({
@@ -344,70 +378,48 @@ export default function ProductManagement() {
         <table>
           <thead>
             <tr>
-              <th className="sortable-th" onClick={() => handleSort('nome')}>Nome{renderSortIndicator('nome')}</th>
-              <th className="sortable-th" onClick={() => handleSort('tipologia')}>Tipologia{renderSortIndicator('tipologia')}</th>
-              <th className="sortable-th" onClick={() => handleSort('branca')}>Branca{renderSortIndicator('branca')}</th>
-              <th className="sortable-th" onClick={() => handleSort('taglia')}>Taglia{renderSortIndicator('taglia')}</th>
-              <th>Immagine</th>
-              <th className="sortable-th" onClick={() => handleSort('quantita_magazzino')}>Magazzino{renderSortIndicator('quantita_magazzino')}</th>
-              <th className="sortable-th" onClick={() => handleSort('prezzo')}>Prezzo{renderSortIndicator('prezzo')}</th>
-              <th className="sortable-th" onClick={() => handleSort('usato')}>Usato{renderSortIndicator('usato')}</th>
-              <th className="sortable-th" onClick={() => handleSort('mostra_home')}>Home{renderSortIndicator('mostra_home')}</th>
-              <th>Azioni</th>
+              <th>Articolo</th><th>Tipologia</th><th>Branche</th><th>Taglia</th><th>Immagine</th>
+              <th>Quantità</th><th>Prezzo</th><th>Usato</th><th>Home</th><th>Azioni</th>
             </tr>
           </thead>
           <tbody>
-            {sortedProducts.map(product => (
-              <Fragment key={product.id}>
-              <tr>
-                <td>{product.nome}</td>
-                <td>{product.tipologia}</td>
-                <td>{product.branca}</td>
-                <td>{product.taglia || '-'}</td>
-                <td>
-                  {product.immagine ? (
-                    <img className="product-thumb" src={product.immagine} alt="" />
-                  ) : '-'}
-                </td>
-                <td>
-                  {product.quantita_magazzino === null || product.quantita_magazzino === undefined ? (
-                    '∞ (Illimitato)'
-                  ) : Number(product.quantita_magazzino) <= 0 ? (
-                    product.usato ? (
-                      <span className="stock-badge stock-hidden">0 (Nascosto)</span>
-                    ) : (
-                      <span className="stock-badge stock-buy">🛒 Da Acquistare (0)</span>
-                    )
-                  ) : (
-                    product.quantita_magazzino
-                  )}
-                </td>
-                <td>€ {product.prezzo.toFixed(2)}</td>
-                <td>{product.usato ? '✓ Sì' : 'No'}</td>
-                <td>{product.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</td>
-                <td className="actions">
-                  <button className="btn-small btn-copy" onClick={() => handleDuplicate(product)}>
-                    📄 Duplica
-                  </button>
-                  <button className="btn-small btn-edit" onClick={() => handleEdit(product)}>
-                    ✏️ Modifica
-                  </button>
-                  <button className="btn-small btn-delete" onClick={() => handleDelete(product.id)}>
-                    🗑️ Elimina
-                  </button>
-                </td>
-              </tr>
-              {product.id === editingId && (
-                <tr>
+            {productGroups.map(group => (
+              <Fragment key={`${group.nome}-${group.branca}-${group.immagine || ''}`}>
+                <tr className="product-group-header">
                   <td colSpan="10">
-                    <div ref={product.id === editingId ? setEditTarget : null} className="inline-edit-target" />
+                    <strong>{group.nome}</strong>
+                    <span>{group.tipologia}</span>
+                    <span>Branche: {parseBranches(group.branca).join(', ')}</span>
+                    <span>Prezzi: {[...new Set(group.variants.map(variant => `€ ${Number(variant.prezzo || 0).toFixed(2)}`))].join(', ')}</span>
+                    <span>{group.usato ? 'Usato' : 'Nuovo'}</span>
+                    <span>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</span>
+                    {group.immagine && <img className="product-thumb" src={group.immagine} alt="" />}
                   </td>
                 </tr>
-              )}
-              {product.id === editingId && editTarget && createPortal(
-                <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,
-                editTarget
-              )}
+                {group.variants.map(product => (
+                  <Fragment key={product.id}>
+                    <tr className="product-variant-row">
+                      <td></td><td></td><td></td>
+                      <td>{product.taglia || 'Taglia unica'}</td>
+                      <td></td>
+                      <td>{product.quantita_magazzino === null || product.quantita_magazzino === undefined ? '∞' : product.quantita_magazzino}</td>
+                      <td>€ {Number(product.prezzo || 0).toFixed(2)}</td>
+                      <td></td><td></td>
+                      <td className="actions">
+                        <button className="btn-small btn-copy" onClick={() => handleDuplicate(product)}>📄 Duplica</button>
+                        <button className="btn-small btn-edit" onClick={() => handleEdit(product)}>✏️ Modifica</button>
+                        <button className="btn-small btn-delete" onClick={() => handleDelete(product.id)}>🗑️ Elimina</button>
+                      </td>
+                    </tr>
+                    {product.id === editingId && (
+                      <tr><td colSpan="10"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                    )}
+                    {product.id === editingId && editTarget && createPortal(
+                      <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,
+                      editTarget
+                    )}
+                  </Fragment>
+                ))}
               </Fragment>
             ))}
           </tbody>

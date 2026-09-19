@@ -203,6 +203,8 @@ app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
     const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
+    if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
@@ -210,7 +212,7 @@ app.post('/api/admin/prodotti', async (req, res) => {
     const result = await db.run(
       `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo, usato, mostra_home)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, branca, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
     );
 
     if (String(guida_taglie_url || '').trim()) {
@@ -228,6 +230,8 @@ app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
     const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
+    if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
@@ -235,7 +239,7 @@ app.put('/api/admin/prodotti/:id', async (req, res) => {
     await db.run(
       `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [nome, tipologia, branca, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
     );
 
     await db.run('UPDATE prodotti SET guida_taglie_url = ? WHERE nome = ?', [String(guida_taglie_url || '').trim() || null, nome]);

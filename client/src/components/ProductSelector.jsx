@@ -23,6 +23,11 @@ function compareSizes(first, second) {
   return firstKey.text.localeCompare(secondKey.text, 'it', { numeric: true })
 }
 
+function productHasBranch(product, branch) {
+  const branches = String(product.branca || '').split(',').map(item => item.trim()).filter(Boolean)
+  return branches.includes(branch) || branches.includes('Tutti')
+}
+
 export default function ProductSelector({ products, onAddItem }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [quantities, setQuantities] = useState({})
@@ -97,7 +102,7 @@ export default function ProductSelector({ products, onAddItem }) {
   }), [products])
 
   const availableBranches = useMemo(() => (
-    [...new Set(products.map(product => product.branca).filter(branca => branca && branca !== 'Tutti'))].sort((first, second) => {
+    [...new Set(products.flatMap(product => String(product.branca || '').split(',').map(branch => branch.trim()).filter(branch => branch && branch !== 'Tutti')))].sort((first, second) => {
       const order = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi']
       const firstIndex = order.indexOf(first)
       const secondIndex = order.indexOf(second)
@@ -132,7 +137,7 @@ export default function ProductSelector({ products, onAddItem }) {
 
     return matchesSearch &&
       (!filters.tipologia || product.tipologia === filters.tipologia) &&
-      (!filters.branca || product.branca === filters.branca || product.branca === 'Tutti') &&
+      (!filters.branca || productHasBranch(product, filters.branca)) &&
       (!filters.taglia || product.taglia === filters.taglia) &&
       (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
       matchesAvailability
@@ -199,7 +204,7 @@ export default function ProductSelector({ products, onAddItem }) {
               <button key={branch} type="button" className="branch-choice" onClick={() => chooseBranch(branch)}>
                 <span className="branch-choice-icon">{branch === 'Capi' ? '★' : '✦'}</span>
                 <span>{branchLabel(branch)}</span>
-                <small>{products.filter(product => product.branca === branch || product.branca === 'Tutti').length} articoli</small>
+                <small>{products.filter(product => productHasBranch(product, branch)).length} articoli</small>
               </button>
             ))}
             <button type="button" className="branch-choice branch-choice-all" onClick={() => chooseBranch('Tutti')}>

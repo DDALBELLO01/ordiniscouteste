@@ -226,6 +226,28 @@
   border: 2px solid #e2e8f0;
 }
 
+.branch-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  background: white;
+}
+
+.branch-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 500;
+}
+
+.branch-checkbox input {
+  width: auto;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -300,6 +322,27 @@
 table thead {
   background-color: #f7fafc;
   border-bottom: 2px solid #cbd5e0;
+}
+
+.product-group-header td {
+  padding: 12px;
+  background: #e6f0f8;
+  border-top: 2px solid #2c5282;
+  color: #1a365d;
+}
+
+.product-group-header td > * {
+  margin-right: 18px;
+  vertical-align: middle;
+}
+
+.product-group-header td > span {
+  color: #4a5568;
+  font-size: 13px;
+}
+
+.product-variant-row td {
+  background: #fff;
 }
 
 table th {
