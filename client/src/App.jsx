@@ -8,6 +8,7 @@ function App() {
   const [page, setPage] = useState('public')
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
+  const [selectedBranch, setSelectedBranch] = useState(null)
 
   const uniformOptions = [
     { label: 'Coccinelle', value: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html' },
@@ -65,10 +66,20 @@ function App() {
           <nav className="header-nav">
             <button 
               className={`nav-btn ${page === 'public' ? 'active' : ''}`}
-              onClick={() => { handlePageChange('public'); handleLogout(); }}
+              onClick={() => { handlePageChange('public'); handleLogout(); setSelectedBranch(null) }}
             >
               Home
             </button>
+
+            {page === 'public' && selectedBranch && (
+              <button
+                type="button"
+                className="nav-btn nav-btn-secondary"
+                onClick={() => setSelectedBranch(null)}
+              >
+                Cambia unità
+              </button>
+            )}
 
             {page === 'public' && (
               <label className="uniform-header-picker-label">
@@ -116,7 +127,13 @@ function App() {
       </header>
 
       <main className="app-main">
-        {page === 'public' && <PublicBooking onCartChange={setCartSummary} />}
+        {page === 'public' && (
+          <PublicBooking
+            onCartChange={setCartSummary}
+            selectedBranch={selectedBranch}
+            onSelectedBranchChange={setSelectedBranch}
+          />
+        )}
         {page === 'admin' && <AdminPanel onLoggedIn={() => setAdminLogged(true)} />}
       </main>
 

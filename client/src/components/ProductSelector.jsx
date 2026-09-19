@@ -28,14 +28,13 @@ function productHasBranch(product, branch) {
   return branches.includes(branch) || branches.includes('Tutti')
 }
 
-export default function ProductSelector({ products, onAddItem }) {
+export default function ProductSelector({ products, onAddItem, selectedBranch, onSelectedBranchChange }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [quantities, setQuantities] = useState({})
   const [sizePicker, setSizePicker] = useState(null)
   const [specialitaPicker, setSpecialitaPicker] = useState(null)
   const [specialitaName, setSpecialitaName] = useState('')
   const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
-  const [selectedBranch, setSelectedBranch] = useState(null)
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
@@ -202,7 +201,7 @@ export default function ProductSelector({ products, onAddItem }) {
   }
 
   const chooseBranch = (branch) => {
-    setSelectedBranch(branch)
+    onSelectedBranchChange?.(branch)
     setFilters(current => ({ ...current, branca: branch === 'Tutti' ? '' : branch }))
   }
 
@@ -297,7 +296,7 @@ export default function ProductSelector({ products, onAddItem }) {
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
 
       <div className="uniform-actions">
-        <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
+        <button type="button" className="branch-change-button" onClick={() => onSelectedBranchChange?.(null)}>
           Cambia unità
         </button>
       </div>

@@ -5,7 +5,7 @@ import ProductSelector from '../components/ProductSelector'
 import BookingForm from '../components/BookingForm'
 import { useAppDialog } from '../components/AppDialog'
 
-export default function PublicBooking({ onCartChange }) {
+export default function PublicBooking({ onCartChange, selectedBranch, onSelectedBranchChange }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -129,6 +129,8 @@ export default function PublicBooking({ onCartChange }) {
             <ProductSelector 
               products={products}
               onAddItem={handleAddItem}
+              selectedBranch={selectedBranch}
+              onSelectedBranchChange={onSelectedBranchChange}
             />
           </div>
 
