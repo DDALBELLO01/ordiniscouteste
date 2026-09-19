@@ -30,7 +30,7 @@ function BranchCheckboxes({ value, onChange, branches }) {
   )
 }
 
-function ProductForm({ formRef, formData, setFormData, branches, editingId, handleSave, resetForm }) {
+function ProductForm({ formRef, formData, setFormData, branches, editingId, handleSave, resetForm, groupEdit = false }) {
   return (
     <form ref={formRef} className="management-form" onSubmit={handleSave}>
       <div className="form-row">
@@ -48,10 +48,12 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <label>Branca:</label>
           <BranchCheckboxes value={formData.branca} onChange={(branca) => setFormData({...formData, branca})} branches={branches} />
         </div>
-        <div className="form-group">
-          <label>Taglia:</label>
-          <input type="text" value={formData.taglia} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, L, XL o 6-8 anni" />
-        </div>
+        {!groupEdit && (
+          <div className="form-group">
+            <label>Taglia:</label>
+            <input type="text" value={formData.taglia} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, L, XL o 6-8 anni" />
+          </div>
+        )}
         <div className="form-group">
           <label>Immagine (URL):</label>
           <input type="url" value={formData.immagine || ''} onChange={(e) => setFormData({...formData, immagine: e.target.value})} placeholder="https://..." />
@@ -60,10 +62,12 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <label>Guida taglie (URL):</label>
           <input type="url" value={formData.guida_taglie_url || ''} onChange={(e) => setFormData({...formData, guida_taglie_url: e.target.value})} placeholder="https://.../guida-taglie.jpg" />
         </div>
-        <div className="form-group">
-          <label>Quantità Magazzino:</label>
-          <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
-        </div>
+        {!groupEdit && (
+          <div className="form-group">
+            <label>Quantità Magazzino:</label>
+            <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
+          </div>
+        )}
         <div className="form-group">
           <label>Prezzo (€):</label>
           <input type="number" step="0.01" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: parseFloat(e.target.value)})} required />
@@ -87,12 +91,34 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
   )
 }
 
+function ProductVariantForm({ formRef, formData, setFormData, editingId, handleSave, resetForm }) {
+  return (
+    <form ref={formRef} className="management-form variant-form" onSubmit={handleSave}>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Taglia:</label>
+          <input type="text" value={formData.taglia || ''} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, 6-8 anni" />
+        </div>
+        <div className="form-group">
+          <label>Quantità magazzino:</label>
+          <input type="number" min="0" value={formData.quantita_magazzino ?? ''} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
+        </div>
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn-primary">Aggiorna riga</button>
+        <button type="button" className="btn-secondary" onClick={resetForm}>Annulla</button>
+      </div>
+    </form>
+  )
+}
+
 export default function ProductManagement() {
   const { showMessage, showConfirm, dialogElement } = useAppDialog()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [editingGroup, setEditingGroup] = useState(null)
   const formRef = useRef(null)
   const [editTarget, setEditTarget] = useState(null)
   const [filters, setFilters] = useState({
@@ -143,7 +169,13 @@ export default function ProductManagement() {
   const handleSave = async (e) => {
     e.preventDefault()
     try {
-      if (editingId) {
+      if (editingGroup) {
+        await Promise.all(editingGroup.variants.map(variant => axios.put(`/api/admin/prodotti/${variant.id}`, {
+          ...formData,
+          taglia: variant.taglia,
+          quantita_magazzino: variant.quantita_magazzino
+        })))
+      } else if (editingId) {
         await axios.put(`/api/admin/prodotti/${editingId}`, formData)
       } else {
         await axios.post('/api/admin/prodotti', formData)
@@ -182,6 +214,15 @@ export default function ProductManagement() {
   const handleEdit = (product) => {
     setFormData(product)
     setEditingId(product.id)
+    setEditingGroup(null)
+    setEditTarget(null)
+    setShowForm(true)
+  }
+
+  const handleEditGroup = (group) => {
+    setFormData(group)
+    setEditingId(null)
+    setEditingGroup(group)
     setEditTarget(null)
     setShowForm(true)
   }
@@ -200,6 +241,7 @@ export default function ProductManagement() {
       mostra_home: true,
     })
     setEditingId(null)
+    setEditingGroup(null)
     setEditTarget(null)
     setShowForm(false)
   }
@@ -311,7 +353,7 @@ export default function ProductManagement() {
         </button>
       </div>
 
-      {showForm && !editingId && (
+      {showForm && !editingId && !editingGroup && (
         <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />
       )}
 
@@ -394,8 +436,16 @@ export default function ProductManagement() {
                     <span>{group.usato ? 'Usato' : 'Nuovo'}</span>
                     <span>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</span>
                     {group.immagine && <img className="product-thumb" src={group.immagine} alt="" />}
+                    <button type="button" className="btn-small btn-edit" onClick={() => handleEditGroup(group)}>✏️ Modifica testata</button>
                   </td>
                 </tr>
+                {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && (
+                  <tr><td colSpan="10"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                )}
+                {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && editTarget && createPortal(
+                  <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingGroup.nome} handleSave={handleSave} resetForm={resetForm} groupEdit />,
+                  editTarget
+                )}
                 {group.variants.map(product => (
                   <Fragment key={product.id}>
                     <tr className="product-variant-row">
@@ -407,7 +457,7 @@ export default function ProductManagement() {
                       <td></td><td></td>
                       <td className="actions">
                         <button className="btn-small btn-copy" onClick={() => handleDuplicate(product)}>📄 Duplica</button>
-                        <button className="btn-small btn-edit" onClick={() => handleEdit(product)}>✏️ Modifica</button>
+                        <button className="btn-small btn-edit" onClick={() => handleEdit(product)}>✏️ Modifica riga</button>
                         <button className="btn-small btn-delete" onClick={() => handleDelete(product.id)}>🗑️ Elimina</button>
                       </td>
                     </tr>
@@ -415,7 +465,7 @@ export default function ProductManagement() {
                       <tr><td colSpan="10"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
                     )}
                     {product.id === editingId && editTarget && createPortal(
-                      <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,
+                      <ProductVariantForm formRef={formRef} formData={formData} setFormData={setFormData} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,
                       editTarget
                     )}
                   </Fragment>
