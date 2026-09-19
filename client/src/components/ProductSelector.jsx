@@ -295,12 +295,6 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
 
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
 
-      <div className="uniform-actions">
-        <button type="button" className="branch-change-button" onClick={() => onSelectedBranchChange?.(null)}>
-          Cambia unità
-        </button>
-      </div>
-
       <div className="products-list">
         {groupedProducts.map(product => {
           const availableItems = product.items.filter(item => {
