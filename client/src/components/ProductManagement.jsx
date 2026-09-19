@@ -124,7 +124,7 @@ export default function ProductManagement() {
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
-    branca: [],
+    branca: '',
     taglia: '',
     usato: '',
     mostraHome: '',
