@@ -133,6 +133,24 @@ export default function ProductSelector({ products, onAddItem }) {
     return symbols[branch] || '✦'
   }
 
+  const branchReferenceUrl = (branch) => {
+    const urls = {
+      Coccinelle: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html',
+      Lupetti: 'https://www.scoutingfse.it/info_5_uniforme-distintivi-lupetti.html',
+      Guide: 'https://www.scoutingfse.it/info_4_uniforme-distintivi-guide.html',
+      Esploratori: 'https://www.scoutingfse.it/info_3_uniforme-distintivi-esploratori.html',
+      Scolte: 'https://www.scoutingfse.it/info_10_uniforme-distintivi-scolte.html',
+      Rover: 'https://www.scoutingfse.it/info_1_uniforme-distintivi-rover.html',
+    }
+    return urls[branch] || null
+  }
+
+  const handleOpenBranchUniform = (branch) => {
+    const url = branchReferenceUrl(branch)
+    if (!url) return
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   const filteredProducts = useMemo(() => products.filter(product => {
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
     const isUsato = product.usato === 1 || product.usato === true
@@ -295,9 +313,16 @@ export default function ProductSelector({ products, onAddItem }) {
       )}
 
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
-      <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
-        Cambia branca
-      </button>
+      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
+          Cambia branca
+        </button>
+        {branchReferenceUrl(selectedBranch) && (
+          <button type="button" className="size-guide-button" onClick={() => handleOpenBranchUniform(selectedBranch)}>
+            Mostra uniforme
+          </button>
+        )}
+      </div>
 
       <div className="products-list">
         {groupedProducts.map(product => {
