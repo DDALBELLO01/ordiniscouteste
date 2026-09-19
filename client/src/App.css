@@ -63,6 +63,35 @@
   align-items: center;
 }
 
+.uniform-header-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.uniform-header-picker {
+  min-width: 150px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  font: inherit;
+}
+
+.uniform-header-picker option {
+  color: #1a365d;
+}
+
+.uniform-header-picker:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12);
+}
+
 .nav-btn {
   background: rgba(255, 255, 255, 0.2);
   color: white;

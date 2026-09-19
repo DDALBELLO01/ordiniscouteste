@@ -133,35 +133,6 @@ export default function ProductSelector({ products, onAddItem }) {
     return symbols[branch] || '✦'
   }
 
-  const uniformOptions = useMemo(() => [
-    { label: 'Coccinelle', value: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html' },
-    { label: 'Lupetti', value: 'https://www.scoutingfse.it/info_5_uniforme-distintivi-lupetti.html' },
-    { label: 'Guide', value: 'https://www.scoutingfse.it/info_4_uniforme-distintivi-guide.html' },
-    { label: 'Esploratori', value: 'https://www.scoutingfse.it/info_3_uniforme-distintivi-esploratori.html' },
-    { label: 'Scolte', value: 'https://www.scoutingfse.it/info_10_uniforme-distintivi-scolte.html' },
-    { label: 'Rover', value: 'https://www.scoutingfse.it/info_1_uniforme-distintivi-rover.html' },
-    { label: 'Capi', value: 'https://www.scoutingfse.it/info_2_uniforme-distintivi-capi.html' }
-  ], [])
-
-  const branchReferenceUrl = (branch) => {
-    const urls = {
-      Coccinelle: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html',
-      Lupetti: 'https://www.scoutingfse.it/info_5_uniforme-distintivi-lupetti.html',
-      Guide: 'https://www.scoutingfse.it/info_4_uniforme-distintivi-guide.html',
-      Esploratori: 'https://www.scoutingfse.it/info_3_uniforme-distintivi-esploratori.html',
-      Scolte: 'https://www.scoutingfse.it/info_10_uniforme-distintivi-scolte.html',
-      Rover: 'https://www.scoutingfse.it/info_1_uniforme-distintivi-rover.html',
-      Capi: 'https://www.scoutingfse.it/info_2_uniforme-distintivi-capi.html'
-    }
-    return urls[branch] || null
-  }
-
-  const handleOpenBranchUniform = (branch) => {
-    const url = branchReferenceUrl(branch)
-    if (!url) return
-    window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
   const filteredProducts = useMemo(() => products.filter(product => {
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
     const isUsato = product.usato === 1 || product.usato === true
@@ -326,30 +297,9 @@ export default function ProductSelector({ products, onAddItem }) {
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
 
       <div className="uniform-actions">
-        {selectedBranch === 'Tutti' && (
-          <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
-            Cambia branca
-          </button>
-        )}
-        <label className="uniform-picker-label">
-          <span>Mostra uniforme</span>
-          <select
-            className="uniform-picker"
-            defaultValue=""
-            onChange={(event) => {
-              const url = event.target.value
-              if (!url) return
-              window.open(url, '_blank', 'noopener,noreferrer')
-              event.target.value = ''
-            }}
-            aria-label="Mostra uniforme"
-          >
-            <option value="">Seleziona...</option>
-            {uniformOptions.map(option => (
-              <option key={option.label} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
+        <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
+          Cambia unità
+        </button>
       </div>
 
       <div className="products-list">

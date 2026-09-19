@@ -9,6 +9,16 @@ function App() {
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
 
+  const uniformOptions = [
+    { label: 'Coccinelle', value: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html' },
+    { label: 'Lupetti', value: 'https://www.scoutingfse.it/info_5_uniforme-distintivi-lupetti.html' },
+    { label: 'Guide', value: 'https://www.scoutingfse.it/info_4_uniforme-distintivi-guide.html' },
+    { label: 'Esploratori', value: 'https://www.scoutingfse.it/info_3_uniforme-distintivi-esploratori.html' },
+    { label: 'Scolte', value: 'https://www.scoutingfse.it/info_10_uniforme-distintivi-scolte.html' },
+    { label: 'Rover', value: 'https://www.scoutingfse.it/info_1_uniforme-distintivi-rover.html' },
+    { label: 'Capi', value: 'https://www.scoutingfse.it/info_2_uniforme-distintivi-capi.html' }
+  ]
+
   useEffect(() => {
     const token = localStorage.getItem('adminToken')
     if (token) {
@@ -59,6 +69,29 @@ function App() {
             >
               Home
             </button>
+
+            {page === 'public' && (
+              <label className="uniform-header-picker-label">
+                <span>Uniformi</span>
+                <select
+                  className="uniform-header-picker"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const url = event.target.value
+                    if (!url) return
+                    window.open(url, '_blank', 'noopener,noreferrer')
+                    event.target.value = ''
+                  }}
+                  aria-label="Apri uniforme"
+                >
+                  <option value="">Seleziona...</option>
+                  {uniformOptions.map(option => (
+                    <option key={option.label} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             {adminLogged ? (
               <>
                 <button 
