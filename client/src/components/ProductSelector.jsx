@@ -313,17 +313,7 @@ export default function ProductSelector({ products, onAddItem }) {
       )}
 
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <button type="button" className="size-guide-button" onClick={() => setSelectedBranch(null)}>
-          Cambia branca
-        </button>
-        {branchReferenceUrl(selectedBranch) && (
-          <button type="button" className="size-guide-button" onClick={() => handleOpenBranchUniform(selectedBranch)}>
-            Mostra uniforme
-          </button>
-        )}
-      </div>
-
+      
       <div className="products-list">
         {groupedProducts.map(product => {
           const availableItems = product.items.filter(item => {
