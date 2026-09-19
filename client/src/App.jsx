@@ -72,7 +72,6 @@ function App() {
 
             {page === 'public' && (
               <label className="uniform-header-picker-label">
-                <span>Uniformi</span>
                 <select
                   className="uniform-header-picker"
                   defaultValue=""
@@ -84,7 +83,7 @@ function App() {
                   }}
                   aria-label="Apri uniforme"
                 >
-                  <option value="">Seleziona...</option>
+                  <option value="">Uniformi</option>
                   {uniformOptions.map(option => (
                     <option key={option.label} value={option.value}>{option.label}</option>
                   ))}
