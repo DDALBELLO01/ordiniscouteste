@@ -125,9 +125,9 @@ export default function ProductSelector({ products, onAddItem }) {
       Lupetti: '🐺',
       Guide: '🧭',
       Esploratori: '⛺',
-      Scolte: '✦',
-      Rover: '🛰️',
-      Capi: '★',
+      Scolte: '🔥',
+      Rover: '🛶',
+      Capi: '🇷🇸',
       Tutti: '✦'
     }
     return symbols[branch] || '✦'
