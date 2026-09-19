@@ -30,6 +30,7 @@ export default function ProductSelector({ products, onAddItem }) {
   const [specialitaPicker, setSpecialitaPicker] = useState(null)
   const [specialitaName, setSpecialitaName] = useState('')
   const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
+  const [selectedBranch, setSelectedBranch] = useState(null)
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
@@ -92,9 +93,26 @@ export default function ProductSelector({ products, onAddItem }) {
 
   const options = useMemo(() => ({
     tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
-    branche: [...new Set(products.map(product => product.branca).filter(Boolean))].sort(),
     taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort(compareSizes)
   }), [products])
+
+  const availableBranches = useMemo(() => (
+    [...new Set(products.map(product => product.branca).filter(branca => branca && branca !== 'Tutti'))].sort((first, second) => {
+      const order = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi']
+      const firstIndex = order.indexOf(first)
+      const secondIndex = order.indexOf(second)
+      if (firstIndex >= 0 && secondIndex >= 0) return firstIndex - secondIndex
+      if (firstIndex >= 0) return -1
+      if (secondIndex >= 0) return 1
+      return first.localeCompare(second, 'it')
+    })
+  ), [products])
+
+  const branchLabel = (branch) => {
+    if (branch === 'Guide') return 'Riparto Guide'
+    if (branch === 'Esploratori') return 'Riparto Esploratori'
+    return branch
+  }
 
   const filteredProducts = useMemo(() => products.filter(product => {
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
@@ -158,10 +176,41 @@ export default function ProductSelector({ products, onAddItem }) {
 
   const resetFilters = () => {
     setFilters({
-      search: '', tipologia: '', branca: '', taglia: '', usato: '', disponibilita: ''
+      search: '', tipologia: '', branca: selectedBranch || '', taglia: '', usato: '', disponibilita: ''
     })
     setSortField('nome')
     setSortDirection('asc')
+  }
+
+  const chooseBranch = (branch) => {
+    setSelectedBranch(branch)
+    setFilters(current => ({ ...current, branca: branch === 'Tutti' ? '' : branch }))
+  }
+
+  if (!selectedBranch) {
+    return (
+      <div className="branch-welcome">
+        <div className="branch-welcome-content">
+          <span className="branch-welcome-kicker">Ordini Scout</span>
+          <h3>Scegli il materiale da esplorare</h3>
+          <p>Seleziona una branca per vedere subito gli articoli disponibili.</p>
+          <div className="branch-choice-grid">
+            {availableBranches.map(branch => (
+              <button key={branch} type="button" className="branch-choice" onClick={() => chooseBranch(branch)}>
+                <span className="branch-choice-icon">{branch === 'Capi' ? '★' : '✦'}</span>
+                <span>{branchLabel(branch)}</span>
+                <small>{products.filter(product => product.branca === branch || product.branca === 'Tutti').length} articoli</small>
+              </button>
+            ))}
+            <button type="button" className="branch-choice branch-choice-all" onClick={() => chooseBranch('Tutti')}>
+              <span className="branch-choice-icon">✦</span>
+              <span>Tutto il materiale</span>
+              <small>{products.length} articoli</small>
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -173,7 +222,7 @@ export default function ProductSelector({ products, onAddItem }) {
           onClick={() => setShowFilters(!showFilters)}
           aria-expanded={showFilters}
         >
-          <span>🔍 {showFilters ? 'Nascondi filtri e ricerca' : 'Mostra filtri e ricerca'}</span>
+          <span>🔍 {showFilters ? 'Nascondi filtri e ricerca' : 'Mostra filtri e ricerca'} · {selectedBranch === 'Tutti' ? 'Tutto il materiale' : selectedBranch}</span>
           <span className="toggle-icon">{showFilters ? '▲' : '▼'}</span>
         </button>
       </div>
@@ -191,10 +240,6 @@ export default function ProductSelector({ products, onAddItem }) {
             <select value={filters.tipologia} onChange={(e) => updateFilter('tipologia', e.target.value)} aria-label="Filtra per tipologia">
               <option value="">Tutte le tipologie</option>
               {options.tipologie.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
-            <select value={filters.branca} onChange={(e) => updateFilter('branca', e.target.value)} aria-label="Filtra per branca">
-              <option value="">Tutte le branche</option>
-              {options.branche.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
             <select value={filters.taglia} onChange={(e) => updateFilter('taglia', e.target.value)} aria-label="Filtra per taglia">
               <option value="">Tutte le taglie</option>
@@ -231,6 +276,9 @@ export default function ProductSelector({ products, onAddItem }) {
       )}
 
       <div className="catalog-summary">{groupedProducts.length} articoli visualizzati</div>
+      <button type="button" className="branch-change-button" onClick={() => setSelectedBranch(null)}>
+        Cambia branca
+      </button>
 
       <div className="products-list">
         {groupedProducts.map(product => {
