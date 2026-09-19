@@ -119,6 +119,20 @@ export default function ProductSelector({ products, onAddItem }) {
     return branch
   }
 
+  const branchSymbol = (branch) => {
+    const symbols = {
+      Coccinelle: '🐞',
+      Lupetti: '🐺',
+      Guide: '🧭',
+      Esploratori: '⛺',
+      Scolte: '✦',
+      Rover: '🛰️',
+      Capi: '★',
+      Tutti: '✦'
+    }
+    return symbols[branch] || '✦'
+  }
+
   const filteredProducts = useMemo(() => products.filter(product => {
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
     const isUsato = product.usato === 1 || product.usato === true
@@ -202,13 +216,13 @@ export default function ProductSelector({ products, onAddItem }) {
           <div className="branch-choice-grid">
             {availableBranches.map(branch => (
               <button key={branch} type="button" className="branch-choice" onClick={() => chooseBranch(branch)}>
-                <span className="branch-choice-icon">{branch === 'Capi' ? '★' : '✦'}</span>
+                <span className="branch-choice-icon">{branchSymbol(branch)}</span>
                 <span>{branchLabel(branch)}</span>
                 <small>{products.filter(product => productHasBranch(product, branch)).length} articoli</small>
               </button>
             ))}
             <button type="button" className="branch-choice branch-choice-all" onClick={() => chooseBranch('Tutti')}>
-              <span className="branch-choice-icon">✦</span>
+              <span className="branch-choice-icon">{branchSymbol('Tutti')}</span>
               <span>Tutto il materiale</span>
               <small>{products.length} articoli</small>
             </button>
