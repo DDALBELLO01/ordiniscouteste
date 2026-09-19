@@ -150,10 +150,45 @@
   background: white;
   color: #2c5282;
   cursor: pointer;
+  font: inherit;
+  font-weight: 600;
 }
 
 .branch-change-button:hover {
   background: #edf2f7;
+}
+
+.uniform-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.uniform-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1a365d;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.uniform-picker {
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  background: white;
+  color: #2d3748;
+  font: inherit;
+}
+
+.uniform-picker:focus {
+  outline: none;
+  border-color: #2c5282;
+  box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.1);
 }
 
 .branca-group h3 {

@@ -59,7 +59,19 @@ function App() {
             >
               Home
             </button>
-            {adminLogged ? (
+          <button 
+            className={`nav-btn ${page === 'public' ? 'active' : ''}`}
+            onClick={() => setSelectedBranch(null)}>
+            Cambia branca
+          </button>
+          {branchReferenceUrl(selectedBranch) && (
+            <button 
+              className={`nav-btn ${page === 'public' ? 'active' : ''}`}
+              onClick={() => handleOpenBranchUniform(selectedBranch)}>
+              Mostra uniforme
+            </button>
+          )}
+          {adminLogged ? (
               <>
                 <button 
                   className={`nav-btn ${page === 'admin' ? 'active' : ''}`}
@@ -79,18 +91,6 @@ function App() {
                 Admin
               </button>
             )}
-          <button 
-            className={`nav-btn ${page === 'public' ? 'active' : ''}`}
-            onClick={() => setSelectedBranch(null)}>
-            Cambia branca
-          </button>
-          {branchReferenceUrl(selectedBranch) && (
-            <button 
-              className={`nav-btn ${page === 'public' ? 'active' : ''}`}
-              onClick={() => handleOpenBranchUniform(selectedBranch)}>
-              Mostra uniforme
-            </button>
-          )}
           </nav>
         </div>
       </header>
