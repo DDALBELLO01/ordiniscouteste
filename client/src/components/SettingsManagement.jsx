@@ -70,9 +70,12 @@ export default function SettingsManagement() {
         msg += `\n${nonCollegati.length} taglie del sito non sono collegate a nessuna riga locale.`
       }
       if (errori.length > 0) {
-        msg += `\n${errori.length} articoli non sincronizzati per errore.`
+        msg += `\n${errori.length} articoli non sincronizzati per errore:\n`
+        msg += errori.slice(0, 10).map(e => `- ID ${e.scouting_id_prodotto}: ${e.error}`).join('\n')
+        if (errori.length > 10) msg += `\n... e altri ${errori.length - 10}`
       }
       showMessage(msg, 'Sincronizzazione completata')
+      console.log('Dettaglio sincronizzazione ScoutingFSE:', response.data)
     } catch (error) {
       console.error('Errore sincronizzazione ScoutingFSE:', error)
       showMessage('Errore: ' + (error.response?.data?.error || error.message), 'Errore')
