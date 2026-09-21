@@ -158,6 +158,58 @@
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
 }
 
+.uniform-gallery-image-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 12px;
+}
+
+.uniform-gallery-image-button:hover .uniform-gallery-image {
+  transform: scale(1.03);
+}
+
+.uniform-gallery-image {
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+.uniform-image-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.uniform-image-zoom-large {
+  max-width: min(95vw, 1100px);
+  max-height: 92vh;
+  object-fit: contain;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.45);
+}
+
+.uniform-image-zoom-close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: white;
+  color: #1a365d;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .nav-btn {
   background: rgba(255, 255, 255, 0.2);
   color: white;

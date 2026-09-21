@@ -10,6 +10,7 @@ function App() {
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
   const [selectedBranch, setSelectedBranch] = useState(null)
   const [uniformGallery, setUniformGallery] = useState(null)
+  const [zoomedUniformImage, setZoomedUniformImage] = useState(null)
 
   const uniformImagesByBranch = {
     Coccinelle: [
@@ -215,15 +216,47 @@ function App() {
 
             <div className="uniform-gallery-grid">
               {uniformGallery.images.map((image, index) => (
-                <img
+                <button
                   key={`${uniformGallery.branch}-${index}`}
-                  src={image}
-                  alt={`${uniformGallery.branch} uniforme ${index + 1}`}
-                  className="uniform-gallery-image"
-                />
+                  type="button"
+                  className="uniform-gallery-image-button"
+                  onClick={() => setZoomedUniformImage(image)}
+                  aria-label={`Ingrandisci uniforme ${uniformGallery.branch} ${index + 1}`}
+                >
+                  <img
+                    src={image}
+                    alt={`${uniformGallery.branch} uniforme ${index + 1}`}
+                    className="uniform-gallery-image"
+                  />
+                </button>
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {zoomedUniformImage && (
+        <div
+          className="uniform-image-zoom-overlay"
+          onClick={() => setZoomedUniformImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Zoom uniforme"
+        >
+          <button
+            type="button"
+            className="uniform-image-zoom-close"
+            onClick={() => setZoomedUniformImage(null)}
+            aria-label="Chiudi zoom uniforme"
+          >
+            ×
+          </button>
+          <img
+            src={zoomedUniformImage}
+            alt="Uniforme ingrandita"
+            className="uniform-image-zoom-large"
+            onClick={(event) => event.stopPropagation()}
+          />
         </div>
       )}
 
