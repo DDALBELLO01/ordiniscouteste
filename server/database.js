@@ -277,7 +277,8 @@ async function initializePostgresDatabase() {
       prodotto_id INTEGER NOT NULL REFERENCES prodotti(id),
       quantita INTEGER NOT NULL,
       prezzo_unitario DOUBLE PRECISION NOT NULL,
-      specialita TEXT
+      specialita TEXT,
+      acquistato INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS configurazione (
       chiave TEXT PRIMARY KEY,
@@ -297,6 +298,7 @@ async function initializePostgresDatabase() {
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS archiviata INTEGER DEFAULT 0;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS data_archiviazione TIMESTAMP;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS metodo_pagamento TEXT DEFAULT 'in_sede';
+    ALTER TABLE dettagli_prenotazioni ADD COLUMN IF NOT EXISTS acquistato INTEGER DEFAULT 0;
   `);
   await db.run(
     'INSERT OR IGNORE INTO configurazione (chiave, valore) VALUES (?, ?)',
