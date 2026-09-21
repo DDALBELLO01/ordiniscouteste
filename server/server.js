@@ -76,6 +76,8 @@ app.get('/api/config/guida-taglie', async (req, res) => {
   }
 });
 
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+
 app.post('/api/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
@@ -94,6 +96,11 @@ app.post('/api/prenotazioni', async (req, res) => {
     // Validare i dati
     if (!nome_prenotante || !email_prenotante || !branca_riferimento || !items || items.length === 0) {
       return res.status(400).json({ error: 'Dati mancanti' });
+    }
+
+    const trimmedEmail = String(email_prenotante).trim();
+    if (!isValidEmail(trimmedEmail)) {
+      return res.status(400).json({ error: 'Inserisci un indirizzo email valido' });
     }
 
     // VALIDARE DISPONIBILITÀ PRIMA DI CREARE LA PRENOTAZIONE

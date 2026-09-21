@@ -9,15 +9,78 @@ function App() {
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
   const [selectedBranch, setSelectedBranch] = useState(null)
+  const [uniformGallery, setUniformGallery] = useState(null)
+
+  const uniformImagesByBranch = {
+    Coccinelle: [
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150554.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150620.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150647.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150723.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150754.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/26092013150819.gif'
+    ],
+    Lupetti: [
+      'https://www.scoutingfse.it/images/img_contenuti/25092013090139.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013092403.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013090215.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013092459.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013092926.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013092634.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013092700.gif'
+    ],
+    Guide: [
+      'https://www.scoutingfse.it/images/img_contenuti/06092013140906.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013140936.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141007.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141038.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141108.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141142.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141251.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141325.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141356.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/06092013141442.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013174634.jpg'
+    ],
+    Esploratori: [
+      'https://www.scoutingfse.it/images/img_contenuti/23092013172810.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013172914.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013172838.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173045.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173116.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173150.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173217.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173301.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173326.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173451.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/23092013173851.jpg'
+    ],
+    Scolte: [
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141355.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141418.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141447.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141514.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141535.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141535.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013141559.gif'
+    ],
+    Rover: [
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140354.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140417.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140447.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140512.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140546.gif',
+      'https://www.scoutingfse.it/images/img_contenuti/25092013140620.gif'
+    ]
+  }
 
   const uniformOptions = [
-    { label: 'Coccinelle', value: 'https://www.scoutingfse.it/info_6_uniforme-distintivi-coccinelle.html' },
-    { label: 'Lupetti', value: 'https://www.scoutingfse.it/info_5_uniforme-distintivi-lupetti.html' },
-    { label: 'Guide', value: 'https://www.scoutingfse.it/info_4_uniforme-distintivi-guide.html' },
-    { label: 'Esploratori', value: 'https://www.scoutingfse.it/info_3_uniforme-distintivi-esploratori.html' },
-    { label: 'Scolte', value: 'https://www.scoutingfse.it/info_10_uniforme-distintivi-scolte.html' },
-    { label: 'Rover', value: 'https://www.scoutingfse.it/info_1_uniforme-distintivi-rover.html' },
-    { label: 'Capi', value: 'https://www.scoutingfse.it/info_2_uniforme-distintivi-capi.html' }
+    { label: 'Coccinelle', value: 'Coccinelle' },
+    { label: 'Lupetti', value: 'Lupetti' },
+    { label: 'Guide', value: 'Guide' },
+    { label: 'Esploratori', value: 'Esploratori' },
+    { label: 'Scolte', value: 'Scolte' },
+    { label: 'Rover', value: 'Rover' }
   ]
 
   useEffect(() => {
@@ -87,9 +150,12 @@ function App() {
                   className="uniform-header-picker"
                   defaultValue=""
                   onChange={(event) => {
-                    const url = event.target.value
-                    if (!url) return
-                    window.open(url, '_blank', 'noopener,noreferrer')
+                    const branch = event.target.value
+                    if (!branch) return
+                    setUniformGallery({
+                      branch,
+                      images: uniformImagesByBranch[branch] || []
+                    })
                     event.target.value = ''
                   }}
                   aria-label="Apri uniforme"
@@ -136,6 +202,30 @@ function App() {
         )}
         {page === 'admin' && <AdminPanel onLoggedIn={() => setAdminLogged(true)} />}
       </main>
+
+      {uniformGallery && (
+        <div className="uniform-gallery-overlay" onClick={() => setUniformGallery(null)} role="dialog" aria-modal="true" aria-label="Galleria uniformi">
+          <div className="uniform-gallery-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="uniform-gallery-header">
+              <h3>Uniformi - {uniformGallery.branch}</h3>
+              <button type="button" className="uniform-gallery-close" onClick={() => setUniformGallery(null)} aria-label="Chiudi galleria uniformi">
+                ×
+              </button>
+            </div>
+
+            <div className="uniform-gallery-grid">
+              {uniformGallery.images.map((image, index) => (
+                <img
+                  key={`${uniformGallery.branch}-${index}`}
+                  src={image}
+                  alt={`${uniformGallery.branch} uniforme ${index + 1}`}
+                  className="uniform-gallery-image"
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="app-footer">
         <p>&copy; 2026 Scout Este. Realizzato con ❤️</p>

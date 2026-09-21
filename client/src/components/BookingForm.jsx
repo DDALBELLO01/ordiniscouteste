@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import '../styles/components.css'
 
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
+
 export default function BookingForm({ items, onSubmit, submitted }) {
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [brancaRiferimento, setBrancaRiferimento] = useState('')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
+  const [emailError, setEmailError] = useState('')
 
   const brancheRiferimento = ['Cerchio', 'Branco', 'Riparto Ginestra', 'Riparto Sorgente', 'Riparto Atheste', 'Clan', 'Fuoco','RS']
 
@@ -14,12 +17,20 @@ export default function BookingForm({ items, onSubmit, submitted }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setEmailError('Inserisci un indirizzo email valido.')
+      return
+    }
+
+    setEmailError('')
     setLoading(true)
 
     try {
       await onSubmit({
         nome_prenotante: nome,
-        email_prenotante: email,
+        email_prenotante: trimmedEmail,
         branca_riferimento: brancaRiferimento,
         note
       })
@@ -56,10 +67,15 @@ export default function BookingForm({ items, onSubmit, submitted }) {
         <input
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value)
+            if (emailError) setEmailError('')
+          }}
           required
+          aria-invalid={!!emailError}
           placeholder="tua.email@esempio.com"
         />
+        {emailError && <small className="field-error">{emailError}</small>}
       </div>
 
       <div className="form-group">

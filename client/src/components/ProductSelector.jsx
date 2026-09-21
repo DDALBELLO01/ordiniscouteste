@@ -35,13 +35,13 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const [specialitaPicker, setSpecialitaPicker] = useState(null)
   const [specialitaName, setSpecialitaName] = useState('')
   const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
+  const [zoomedImage, setZoomedImage] = useState(null)
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
     branca: '',
     taglia: '',
-    usato: '',
-    disponibilita: ''
+    usato: ''
   })
   const [sortField, setSortField] = useState('nome')
   const [sortOrder, setSortDirection] = useState('asc')
@@ -143,17 +143,11 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
       .filter(Boolean)
       .some(value => value.toLowerCase().includes(search))
 
-    const isAvailable = !isUsato || !isOutLocal
-    const matchesAvailability = !filters.disponibilita || (
-      filters.disponibilita === 'disponibile' ? isAvailable : !isAvailable
-    )
-
     return matchesSearch &&
       (!filters.tipologia || product.tipologia === filters.tipologia) &&
       (!filters.branca || productHasBranch(product, filters.branca)) &&
       (!filters.taglia || product.taglia === filters.taglia) &&
-      (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato)) &&
-      matchesAvailability
+      (!filters.usato || (filters.usato === 'usato' ? isUsato : !isUsato))
   }), [products, filters])
 
   const groupedProducts = useMemo(() => {
@@ -194,7 +188,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
 
   const resetFilters = () => {
     setFilters({
-      search: '', tipologia: '', branca: selectedBranch || '', taglia: '', usato: '', disponibilita: ''
+      search: '', tipologia: '', branca: selectedBranch || '', taglia: '', usato: ''
     })
     setSortField('nome')
     setSortDirection('asc')
@@ -270,11 +264,6 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
               <option value="nuovo">Solo nuovi</option>
               <option value="usato">Solo usati</option>
             </select>
-            <select value={filters.disponibilita} onChange={(e) => updateFilter('disponibilita', e.target.value)} aria-label="Filtra per disponibilità">
-              <option value="">Ogni disponibilità</option>
-              <option value="disponibile">Disponibili</option>
-              <option value="esaurito">Esauriti</option>
-            </select>
             <select value={`${sortField}-${sortOrder}`} onChange={(e) => {
               const [field, order] = e.target.value.split('-')
               setSortField(field)
@@ -324,7 +313,13 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
           return (
             <div key={`${product.id}-${product.specialita || ''}`} className="product-row">
               <div className="product-image-wrap">
-                {product.immagine ? <img src={product.immagine} alt={product.nome} className="product-image" /> : <span className="product-image-placeholder">Scout</span>}
+                {product.immagine ? (
+                  <button type="button" className="product-image-button" onClick={() => setZoomedImage(product.immagine)} aria-label={`Ingrandisci immagine ${product.nome}`}>
+                    <img src={product.immagine} alt={product.nome} className="product-image" />
+                  </button>
+                ) : (
+                  <span className="product-image-placeholder">Scout</span>
+                )}
               </div>
               <div className="product-details">
                 <div className="product-header">
@@ -427,6 +422,12 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
         <div className="size-guide-overlay" role="dialog" aria-modal="true" aria-label="Guida alle taglie" onClick={() => setSizeGuideUrl(null)}>
           <button type="button" className="size-guide-close" onClick={() => setSizeGuideUrl(null)} aria-label="Chiudi guida taglie">×</button>
           <img src={sizeGuideUrl} alt="Guida alle taglie" className="size-guide-image" onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
+      {zoomedImage && (
+        <div className="image-zoom-overlay" role="dialog" aria-modal="true" aria-label="Zoom immagine prodotto" onClick={() => setZoomedImage(null)}>
+          <button type="button" className="size-guide-close" onClick={() => setZoomedImage(null)} aria-label="Chiudi zoom immagine">×</button>
+          <img src={zoomedImage} alt="Anteprima prodotto ingrandita" className="image-zoom-large" onClick={(event) => event.stopPropagation()} />
         </div>
       )}
       {dialogElement}
