@@ -5,6 +5,8 @@ import '../styles/components.css'
 export default function ToBuyManagement() {
   const [itemsToBuy, setItemsToBuy] = useState([])
   const [loading, setLoading] = useState(true)
+  const [purchasing, setPurchasing] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
   const [filterView, setFilterView] = useState('richiesti')
   const [sizeGuideUrl, setSizeGuideUrl] = useState(null)
 
@@ -18,6 +20,7 @@ export default function ToBuyManagement() {
       const soloRichiesti = viewMode === 'richiesti'
       const response = await axios.get(`/api/admin/da-acquistare?soloRichiesti=${soloRichiesti}`)
       setItemsToBuy(response.data)
+      setSelectedIds([])
     } catch (error) {
       console.error('Errore caricamento lista da acquistare:', error)
     } finally {
@@ -46,6 +49,31 @@ export default function ToBuyManagement() {
     return firstSize.text.localeCompare(secondSize.text, 'it', { numeric: true })
   })
 
+  const toggleSelected = (productId) => {
+    setSelectedIds(current => current.includes(productId)
+      ? current.filter(id => id !== productId)
+      : [...current, productId]
+    )
+  }
+
+  const toggleAll = () => {
+    setSelectedIds(current => current.length === sortedItems.length ? [] : sortedItems.map(item => item.id))
+  }
+
+  const handlePurchase = async () => {
+    if (selectedIds.length === 0) return
+
+    try {
+      setPurchasing(true)
+      await axios.post('/api/admin/da-acquistare/acquista', { productIds: selectedIds })
+      await fetchItemsToBuy(filterView)
+    } catch (error) {
+      console.error('Errore registrazione acquisto:', error)
+    } finally {
+      setPurchasing(false)
+    }
+  }
+
   if (loading) return <div className="loading">Caricamento lista da acquistare...</div>
 
   return (
@@ -61,6 +89,13 @@ export default function ToBuyManagement() {
         </div>
       </div>
 
+      <div className="to-buy-actions">
+        <span>{selectedIds.length} articoli selezionati</span>
+        <button type="button" className="btn-primary" onClick={handlePurchase} disabled={purchasing || selectedIds.length === 0}>
+          {purchasing ? 'Aggiornamento...' : 'Segna come acquistati'}
+        </button>
+      </div>
+
       <div className="tobuy-info-banner">
         <p style={{ margin: 0 }}>
           {filterView === 'richiesti'
@@ -73,6 +108,7 @@ export default function ToBuyManagement() {
         <table>
           <thead>
             <tr>
+              <th><input type="checkbox" checked={sortedItems.length > 0 && selectedIds.length === sortedItems.length} onChange={toggleAll} aria-label="Seleziona tutti gli articoli" /></th>
               <th>Nome Articolo</th><th>Tipologia</th><th>Branca</th><th>Taglia</th>
               <th>Prezzo</th><th>Giacenza Attuale</th><th>Richieste Attive</th><th>Guida taglie</th><th>Stato</th>
             </tr>
@@ -80,6 +116,7 @@ export default function ToBuyManagement() {
           <tbody>
             {sortedItems.map(product => (
               <tr key={product.id}>
+                <td><input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggleSelected(product.id)} aria-label={`Seleziona ${product.nome}`} /></td>
                 <td><strong>{product.nome}</strong></td>
                 <td>{product.tipologia}</td>
                 <td>{product.branca}</td>
@@ -98,7 +135,7 @@ export default function ToBuyManagement() {
               </tr>
             ))}
             {itemsToBuy.length === 0 && (
-              <tr><td colSpan="9" style={{ textAlign: 'center', padding: '20px' }}>Nessun articolo nuovo da acquistare.</td></tr>
+              <tr><td colSpan="10" style={{ textAlign: 'center', padding: '20px' }}>Nessun articolo nuovo da acquistare.</td></tr>
             )}
           </tbody>
         </table>

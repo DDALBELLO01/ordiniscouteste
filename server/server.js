@@ -135,7 +135,7 @@ app.post('/api/prenotazioni', async (req, res) => {
     // Inserire prenotazione
     await db.run(
       'INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, note) VALUES (?, ?, ?, ?, ?)',
-      [prenotazione_id, nome_prenotante, email_prenotante, branca_riferimento, note || null]
+      [prenotazione_id, nome_prenotante, trimmedEmail, branca_riferimento, note || null]
     );
 
     // Inserire dettagli prenotazione E DECREMENTARE QUANTITÀ
@@ -169,7 +169,7 @@ app.post('/api/prenotazioni', async (req, res) => {
     const bookingData = {
       id: prenotazione_id,
       nome_prenotante,
-      email_prenotante,
+      email_prenotante: trimmedEmail,
       branca_riferimento,
       data_prenotazione: new Date().toISOString(),
       note,
@@ -181,7 +181,7 @@ app.post('/api/prenotazioni', async (req, res) => {
     };
 
     // Inviare email
-    const customerEmailSent = await sendBookingEmail(email_prenotante, bookingData);
+    const customerEmailSent = await sendBookingEmail(trimmedEmail, bookingData);
     const adminEmailSent = await sendAdminNotification(bookingData);
 
     res.status(201).json({
@@ -283,7 +283,7 @@ app.get('/api/admin/prenotazioni', async (req, res) => {
     }
 
     const prenotazioni = await db.all(
-      `SELECT p.*, COUNT(dp.id) as num_items,
+      `SELECT p.*, COALESCE(SUM(dp.quantita), 0) as num_items,
         COALESCE(SUM(dp.quantita * dp.prezzo_unitario), 0) as totale
        FROM prenotazioni p
        LEFT JOIN dettagli_prenotazioni dp ON p.id = dp.prenotazione_id
@@ -363,7 +363,7 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
     if (Array.isArray(items)) {
       // 1. Ripristina le quantità precedenti a magazzino
       const oldItems = await db.all(
-        'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ?',
+        'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ? AND (acquistato = 0 OR acquistato IS NULL)',
         [bookingId]
       );
       for (const oldItem of oldItems) {
@@ -415,7 +415,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
+              WHERE dp.prodotto_id = p.id AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) as quantita_prenotata
       FROM prodotti p
       WHERE (p.usato = 0 OR p.usato IS NULL)
@@ -427,7 +427,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
           SELECT SUM(dp.quantita)
           FROM dettagli_prenotazioni dp
           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
+          WHERE dp.prodotto_id = p.id AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
         ), 0) > 0
       `;
     } else {
@@ -439,7 +439,7 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
             SELECT SUM(dp.quantita)
             FROM dettagli_prenotazioni dp
             JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-            WHERE dp.prodotto_id = p.id AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
+            WHERE dp.prodotto_id = p.id AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
           ), 0) > COALESCE(p.quantita_magazzino, 999999)
         )
       `;
@@ -455,11 +455,67 @@ app.get('/api/admin/da-acquistare', async (req, res) => {
   }
 });
 
+app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
+  const productIds = Array.isArray(req.body?.productIds)
+    ? [...new Set(req.body.productIds.map(Number).filter(Number.isInteger))]
+    : [];
+
+  if (productIds.length === 0) {
+    return res.status(400).json({ error: 'Seleziona almeno un articolo' });
+  }
+
+  const db = getDatabase();
+  try {
+    await db.run('BEGIN TRANSACTION');
+    let acquistati = 0;
+
+    for (const productId of productIds) {
+      const richieste = await db.get(
+        `SELECT COALESCE(SUM(dp.quantita), 0) AS quantita
+         FROM dettagli_prenotazioni dp
+         JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+         WHERE dp.prodotto_id = ? AND (dp.acquistato = 0 OR dp.acquistato IS NULL)
+           AND (pr.archiviata = 0 OR pr.archiviata IS NULL)`,
+        [productId]
+      );
+      const quantita = Number(richieste?.quantita || 0);
+
+      if (quantita > 0) {
+        await db.run(
+          `UPDATE prodotti
+           SET quantita_magazzino = CASE
+             WHEN quantita_magazzino < 0 THEN 0
+             ELSE COALESCE(quantita_magazzino, 0) + ?
+           END
+           WHERE id = ? AND quantita_magazzino IS NOT NULL`,
+          [quantita, productId]
+        );
+        const result = await db.run(
+          `UPDATE dettagli_prenotazioni SET acquistato = 1
+           WHERE prodotto_id = ? AND (acquistato = 0 OR acquistato IS NULL)
+             AND prenotazione_id IN (
+               SELECT id FROM prenotazioni WHERE archiviata = 0 OR archiviata IS NULL
+             )`,
+          [productId]
+        );
+        acquistati += result.changes || 0;
+      }
+    }
+
+    await db.run('COMMIT');
+    res.json({ message: 'Articoli segnati come acquistati', acquistati });
+  } catch (error) {
+    await db.run('ROLLBACK');
+    console.error('Errore registrazione acquisto:', error);
+    res.status(500).json({ error: 'Errore registrazione acquisto' });
+  }
+});
+
 app.delete('/api/admin/prenotazioni/:id', async (req, res) => {
   try {
     const db = getDatabase();
     const dettagli = await db.all(
-      'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ?',
+      'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ? AND (acquistato = 0 OR acquistato IS NULL)',
       [req.params.id]
     );
 

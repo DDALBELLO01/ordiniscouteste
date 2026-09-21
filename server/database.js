@@ -130,6 +130,9 @@ export async function initializeDatabase() {
   if (!colonneDettagli.some(colonna => colonna.name === 'specialita')) {
     await db.run('ALTER TABLE dettagli_prenotazioni ADD COLUMN specialita TEXT');
   }
+  if (!colonneDettagli.some(colonna => colonna.name === 'acquistato')) {
+    await db.run('ALTER TABLE dettagli_prenotazioni ADD COLUMN acquistato INTEGER DEFAULT 0');
+  }
 
   // Tabella Configurazione (stato delle prenotazioni)
   await db.exec(`

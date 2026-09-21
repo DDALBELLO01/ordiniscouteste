@@ -71,8 +71,14 @@ export default function BookingForm({ items, onSubmit, submitted }) {
             setEmail(e.target.value)
             if (emailError) setEmailError('')
           }}
+          onInvalid={(e) => {
+            e.preventDefault()
+            setEmailError('Inserisci un indirizzo email valido, ad esempio nome@dominio.it.')
+          }}
           required
           aria-invalid={!!emailError}
+          pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
+          title="Inserisci un indirizzo email valido, ad esempio nome@dominio.it."
           placeholder="tua.email@esempio.com"
         />
         {emailError && <small className="field-error">{emailError}</small>}

@@ -454,6 +454,20 @@ table th.sortable-th:hover {
   font-size: 14px;
 }
 
+.to-buy-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #4a5568;
+  font-size: 13px;
+}
+
 .size-guide-overlay {
   position: fixed;
   inset: 0;
