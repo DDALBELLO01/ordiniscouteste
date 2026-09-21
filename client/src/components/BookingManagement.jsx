@@ -191,7 +191,7 @@ export default function BookingManagement() {
               onClick={handleArchiveAll}
               disabled={archiving || bookings.length === 0}
             >
-              {archiving ? '⏳ Archiviazione...' : '📦 Archivia Tutte le Prenotazioni Attive'}
+              {archiving ? '⏳ Archiviazione...' : '📦 Archivia tutto'}
             </button>
           )}
           <button 
@@ -393,8 +393,14 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
   }
 
   const handleSaveBooking = async () => {
+    const email = editForm.email_prenotante.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showMessage('Inserisci un indirizzo email valido', 'Email non valida')
+      return
+    }
+
     try {
-      await axios.put(`/api/admin/prenotazioni/${bookingId}`, editForm)
+      await axios.put(`/api/admin/prenotazioni/${bookingId}`, { ...editForm, email_prenotante: email })
       setIsEditing(false)
       fetchDetails()
       if (onBookingUpdated) onBookingUpdated()

@@ -347,13 +347,18 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
       return res.status(404).json({ error: 'Prenotazione non trovata' });
     }
 
+    const trimmedEmail = String(email_prenotante ?? existing.email_prenotante).trim();
+    if (!isValidEmail(trimmedEmail)) {
+      return res.status(400).json({ error: 'Inserisci un indirizzo email valido' });
+    }
+
     await db.run(
       `UPDATE prenotazioni 
        SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, note = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?`,
       [
         nome_prenotante || existing.nome_prenotante,
-        email_prenotante || existing.email_prenotante,
+        trimmedEmail,
         branca_riferimento || existing.branca_riferimento,
         note !== undefined ? note : existing.note,
         bookingId
