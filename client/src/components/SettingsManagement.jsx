@@ -10,6 +10,7 @@ export default function SettingsManagement() {
   const [emails, setEmails] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     fetchEmails()
@@ -59,6 +60,27 @@ export default function SettingsManagement() {
     return <div className="loading">Caricamento impostazioni...</div>
   }
 
+  const handleSyncScouting = async () => {
+    setSyncing(true)
+    try {
+      const response = await axios.post('/api/admin/scouting/sincronizza-tutti')
+      const { aggiornati, nonCollegati, errori } = response.data
+      let msg = `Aggiornate ${aggiornati.length} taglie da ScoutingFSE.`
+      if (nonCollegati.length > 0) {
+        msg += `\n${nonCollegati.length} taglie del sito non sono collegate a nessuna riga locale.`
+      }
+      if (errori.length > 0) {
+        msg += `\n${errori.length} articoli non sincronizzati per errore.`
+      }
+      showMessage(msg, 'Sincronizzazione completata')
+    } catch (error) {
+      console.error('Errore sincronizzazione ScoutingFSE:', error)
+      showMessage('Errore: ' + (error.response?.data?.error || error.message), 'Errore')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <>
     <div className="settings-management">
@@ -85,6 +107,16 @@ export default function SettingsManagement() {
         <div className="form-actions">
           <button type="button" className="btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? '⏳ Salvataggio...' : '💾 Salva Email Branche'}
+          </button>
+        </div>
+      </div>
+
+      <div className="detail-section">
+        <h4>🔄 Sincronizzazione ScoutingFSE</h4>
+        <p>Aggiorna prezzo e disponibilità degli articoli collegati (tramite ID Prodotto e Codice taglia ScoutingFSE) leggendo i dati direttamente dal sito, senza necessità di login.</p>
+        <div className="form-actions">
+          <button type="button" className="btn-primary" onClick={handleSyncScouting} disabled={syncing}>
+            {syncing ? '⏳ Sincronizzazione...' : '🔄 Sincronizza da ScoutingFSE'}
           </button>
         </div>
       </div>

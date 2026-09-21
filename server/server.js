@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
-import { cercaProdottiScouting, ottieniProdottoScouting } from './scoutingSync.js';
+import { ottieniProdottoScouting } from './scoutingSync.js';
  
 
 dotenv.config();
@@ -274,56 +274,43 @@ app.delete('/api/admin/prodotti/:id', async (req, res) => {
   }
 });
 
-// Ricerca su ScoutingFSE per codice/testo articolo, senza necessità di login
-app.get('/api/admin/scouting/cerca', async (req, res) => {
-  try {
-    const termine = String(req.query.q || '').trim();
-    if (!termine) return res.status(400).json({ error: 'Specificare un codice o un testo da cercare' });
-    const risultati = await cercaProdottiScouting(termine);
-    res.json(risultati);
-  } catch (error) {
-    console.error('Errore ricerca ScoutingFSE:', error);
-    res.status(502).json({ error: 'Errore durante la ricerca su ScoutingFSE' });
-  }
-});
-
-// Dettaglio prodotto ScoutingFSE (prezzo base + taglie/varianti disponibili)
-app.get('/api/admin/scouting/prodotto/:idProdotto', async (req, res) => {
-  try {
-    const dettaglio = await ottieniProdottoScouting(req.params.idProdotto);
-    res.json(dettaglio);
-  } catch (error) {
-    console.error('Errore lettura prodotto ScoutingFSE:', error);
-    res.status(502).json({ error: 'Errore durante la lettura del prodotto su ScoutingFSE' });
-  }
-});
-
-// Sincronizza prezzo/disponibilità delle taglie già collegate (scouting_caratteristica_id) con ScoutingFSE
-app.post('/api/admin/scouting/sincronizza/:idProdotto', async (req, res) => {
+// Sincronizza tutti gli articoli collegati a un ID Prodotto ScoutingFSE, senza necessità di login
+app.post('/api/admin/scouting/sincronizza-tutti', async (req, res) => {
   try {
     const db = getDatabase();
-    const dettaglio = await ottieniProdottoScouting(req.params.idProdotto);
+    const idProdottiRighe = await db.all(
+      'SELECT DISTINCT scouting_id_prodotto FROM prodotti WHERE scouting_id_prodotto IS NOT NULL'
+    );
 
     const aggiornati = [];
     const nonCollegati = [];
+    const errori = [];
 
-    for (const variante of dettaglio.varianti) {
-      const prodotto = await db.get(
-        'SELECT * FROM prodotti WHERE scouting_caratteristica_id = ?',
-        [variante.scouting_caratteristica_id]
-      );
-      if (!prodotto) {
-        nonCollegati.push(variante);
-        continue;
+    for (const { scouting_id_prodotto: idProdotto } of idProdottiRighe) {
+      try {
+        const dettaglio = await ottieniProdottoScouting(idProdotto);
+        for (const variante of dettaglio.varianti) {
+          const prodotto = await db.get(
+            'SELECT * FROM prodotti WHERE scouting_caratteristica_id = ?',
+            [variante.scouting_caratteristica_id]
+          );
+          if (!prodotto) {
+            nonCollegati.push(variante);
+            continue;
+          }
+          await db.run(
+            `UPDATE prodotti SET prezzo = ?, esaurito_scouting = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [variante.prezzo ?? prodotto.prezzo, variante.disponibile ? 0 : 1, prodotto.id]
+          );
+          aggiornati.push({ id: prodotto.id, nome: dettaglio.nome, taglia: prodotto.taglia, prezzo: variante.prezzo, disponibile: variante.disponibile });
+        }
+      } catch (error) {
+        console.error(`Errore sincronizzazione ScoutingFSE per ID ${idProdotto}:`, error);
+        errori.push({ scouting_id_prodotto: idProdotto, error: error.message });
       }
-      await db.run(
-        `UPDATE prodotti SET prezzo = ?, esaurito_scouting = ?, scouting_id_prodotto = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-        [variante.prezzo ?? prodotto.prezzo, variante.disponibile ? 0 : 1, dettaglio.scouting_id_prodotto, prodotto.id]
-      );
-      aggiornati.push({ id: prodotto.id, taglia: prodotto.taglia, prezzo: variante.prezzo, disponibile: variante.disponibile });
     }
 
-    res.json({ prodotto: dettaglio, aggiornati, nonCollegati });
+    res.json({ aggiornati, nonCollegati, errori });
   } catch (error) {
     console.error('Errore sincronizzazione ScoutingFSE:', error);
     res.status(502).json({ error: 'Errore durante la sincronizzazione con ScoutingFSE' });

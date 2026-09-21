@@ -159,11 +159,6 @@ export default function ProductManagement() {
     scouting_caratteristica_id: '',
   })
 
-  const [scoutingQuery, setScoutingQuery] = useState('')
-  const [scoutingResults, setScoutingResults] = useState(null)
-  const [scoutingLoading, setScoutingLoading] = useState(false)
-  const [syncingId, setSyncingId] = useState(null)
-
   const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
 
   useEffect(() => {
@@ -268,47 +263,6 @@ export default function ProductManagement() {
     setEditingGroup(null)
     setEditTarget(null)
     setShowForm(false)
-  }
-
-  const handleScoutingSearch = async (e) => {
-    e.preventDefault()
-    const termine = scoutingQuery.trim()
-    if (!termine) return
-    setScoutingLoading(true)
-    setScoutingResults(null)
-    try {
-      const response = await axios.get('/api/admin/scouting/cerca', { params: { q: termine } })
-      setScoutingResults(response.data)
-    } catch (error) {
-      console.error('Errore ricerca ScoutingFSE:', error)
-      showMessage('Errore: ' + (error.response?.data?.error || error.message), 'Errore')
-    } finally {
-      setScoutingLoading(false)
-    }
-  }
-
-  const handleSyncGroup = async (group) => {
-    const scoutingIdProdotto = group.scouting_id_prodotto
-    if (!scoutingIdProdotto) {
-      showMessage('Imposta prima l\'"ID Prodotto ScoutingFSE" nella testata dell\'articolo (modifica testata).', 'ID ScoutingFSE mancante')
-      return
-    }
-    setSyncingId(scoutingIdProdotto)
-    try {
-      const response = await axios.post(`/api/admin/scouting/sincronizza/${scoutingIdProdotto}`)
-      const { aggiornati, nonCollegati } = response.data
-      let msg = `Aggiornate ${aggiornati.length} taglie da ScoutingFSE.`
-      if (nonCollegati.length > 0) {
-        msg += `\n${nonCollegati.length} taglie del sito non sono collegate a nessuna riga locale (codici: ${nonCollegati.map(v => v.scouting_caratteristica_id).join(', ')}).`
-      }
-      showMessage(msg, 'Sincronizzazione completata')
-      await fetchProducts()
-    } catch (error) {
-      console.error('Errore sincronizzazione ScoutingFSE:', error)
-      showMessage('Errore: ' + (error.response?.data?.error || error.message), 'Errore')
-    } finally {
-      setSyncingId(null)
-    }
   }
 
   const [sortConfig, setSortConfig] = useState({ field: 'nome', direction: 'asc' })
@@ -422,40 +376,6 @@ export default function ProductManagement() {
         <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />
       )}
 
-      <div className="management-form" style={{marginBottom: '16px'}}>
-        <form onSubmit={handleScoutingSearch} className="form-row" style={{alignItems: 'flex-end'}}>
-          <div className="form-group">
-            <label>Cerca su ScoutingFSE (codice o testo):</label>
-            <input type="text" value={scoutingQuery} onChange={(e) => setScoutingQuery(e.target.value)} placeholder="Es. 16100" />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn-secondary" disabled={scoutingLoading}>{scoutingLoading ? 'Ricerca...' : '🔎 Cerca su ScoutingFSE'}</button>
-          </div>
-        </form>
-        {scoutingResults && (
-          scoutingResults.length === 0 ? (
-            <p className="empty-catalog">Nessun articolo trovato su ScoutingFSE.</p>
-          ) : (
-            <table style={{marginTop: '10px', width: '100%'}}>
-              <thead>
-                <tr><th>Nome</th><th>Cod.</th><th>ID Prodotto</th><th>Prezzo</th><th>Disponibile</th></tr>
-              </thead>
-              <tbody>
-                {scoutingResults.map(item => (
-                  <tr key={item.scouting_id_prodotto}>
-                    <td>{item.nome}</td>
-                    <td>{item.codice}</td>
-                    <td>{item.scouting_id_prodotto}</td>
-                    <td>{item.prezzo !== null ? `€ ${item.prezzo.toFixed(2)}` : '-'}</td>
-                    <td>{item.disponibile ? 'Sì' : 'No'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )
-        )}
-      </div>
-
       <div className="filters-header">
         <button
           type="button"
@@ -536,15 +456,6 @@ export default function ProductManagement() {
                     <span>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</span>
                     {group.immagine && <img className="product-thumb" src={group.immagine} alt="" />}
                     <button type="button" className="btn-small btn-edit" onClick={() => handleEditGroup(group)}>✏️ Modifica testata</button>
-                    <button
-                      type="button"
-                      className="btn-small btn-copy"
-                      disabled={syncingId === group.scouting_id_prodotto}
-                      onClick={() => handleSyncGroup(group)}
-                      title={group.scouting_id_prodotto ? `ID ScoutingFSE: ${group.scouting_id_prodotto}` : 'Imposta prima l\'ID Prodotto ScoutingFSE nella testata'}
-                    >
-                      {syncingId === group.scouting_id_prodotto ? '⏳ Sincronizzo...' : '🔄 Sincronizza da ScoutingFSE'}
-                    </button>
                   </td>
                 </tr>
                 {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && (
