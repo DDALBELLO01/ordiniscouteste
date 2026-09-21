@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
+import { cercaProdottiScouting, ottieniProdottoScouting } from './scoutingSync.js';
  
 
 dotenv.config();
@@ -209,17 +210,19 @@ app.post('/api/admin/login', (req, res) => {
 app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
     const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
     if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
+    const scoutingIdProdotto = scouting_id_prodotto === '' || scouting_id_prodotto === null || scouting_id_prodotto === undefined ? null : Number(scouting_id_prodotto);
+    const scoutingCaratteristicaId = scouting_caratteristica_id === '' || scouting_caratteristica_id === null || scouting_caratteristica_id === undefined ? null : Number(scouting_caratteristica_id);
 
     const result = await db.run(
-      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo, usato, mostra_home)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
+      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scoutingIdProdotto, scoutingCaratteristicaId]
     );
 
     if (String(guida_taglie_url || '').trim()) {
@@ -236,17 +239,19 @@ app.post('/api/admin/prodotti', async (req, res) => {
 app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
     const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
     if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
+    const scoutingIdProdotto = scouting_id_prodotto === '' || scouting_id_prodotto === null || scouting_id_prodotto === undefined ? null : Number(scouting_id_prodotto);
+    const scoutingCaratteristicaId = scouting_caratteristica_id === '' || scouting_caratteristica_id === null || scouting_caratteristica_id === undefined ? null : Number(scouting_caratteristica_id);
 
     await db.run(
-      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
+      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, scouting_id_prodotto = ?, scouting_caratteristica_id = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scoutingIdProdotto, scoutingCaratteristicaId, req.params.id]
     );
 
     await db.run('UPDATE prodotti SET guida_taglie_url = ? WHERE nome = ?', [String(guida_taglie_url || '').trim() || null, nome]);
@@ -266,6 +271,62 @@ app.delete('/api/admin/prodotti/:id', async (req, res) => {
   } catch (error) {
     console.error('Errore eliminazione prodotto:', error);
     res.status(500).json({ error: 'Errore eliminazione prodotto' });
+  }
+});
+
+// Ricerca su ScoutingFSE per codice/testo articolo, senza necessità di login
+app.get('/api/admin/scouting/cerca', async (req, res) => {
+  try {
+    const termine = String(req.query.q || '').trim();
+    if (!termine) return res.status(400).json({ error: 'Specificare un codice o un testo da cercare' });
+    const risultati = await cercaProdottiScouting(termine);
+    res.json(risultati);
+  } catch (error) {
+    console.error('Errore ricerca ScoutingFSE:', error);
+    res.status(502).json({ error: 'Errore durante la ricerca su ScoutingFSE' });
+  }
+});
+
+// Dettaglio prodotto ScoutingFSE (prezzo base + taglie/varianti disponibili)
+app.get('/api/admin/scouting/prodotto/:idProdotto', async (req, res) => {
+  try {
+    const dettaglio = await ottieniProdottoScouting(req.params.idProdotto);
+    res.json(dettaglio);
+  } catch (error) {
+    console.error('Errore lettura prodotto ScoutingFSE:', error);
+    res.status(502).json({ error: 'Errore durante la lettura del prodotto su ScoutingFSE' });
+  }
+});
+
+// Sincronizza prezzo/disponibilità delle taglie già collegate (scouting_caratteristica_id) con ScoutingFSE
+app.post('/api/admin/scouting/sincronizza/:idProdotto', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const dettaglio = await ottieniProdottoScouting(req.params.idProdotto);
+
+    const aggiornati = [];
+    const nonCollegati = [];
+
+    for (const variante of dettaglio.varianti) {
+      const prodotto = await db.get(
+        'SELECT * FROM prodotti WHERE scouting_caratteristica_id = ?',
+        [variante.scouting_caratteristica_id]
+      );
+      if (!prodotto) {
+        nonCollegati.push(variante);
+        continue;
+      }
+      await db.run(
+        `UPDATE prodotti SET prezzo = ?, esaurito_scouting = ?, scouting_id_prodotto = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [variante.prezzo ?? prodotto.prezzo, variante.disponibile ? 0 : 1, dettaglio.scouting_id_prodotto, prodotto.id]
+      );
+      aggiornati.push({ id: prodotto.id, taglia: prodotto.taglia, prezzo: variante.prezzo, disponibile: variante.disponibile });
+    }
+
+    res.json({ prodotto: dettaglio, aggiornati, nonCollegati });
+  } catch (error) {
+    console.error('Errore sincronizzazione ScoutingFSE:', error);
+    res.status(502).json({ error: 'Errore durante la sincronizzazione con ScoutingFSE' });
   }
 });
 
