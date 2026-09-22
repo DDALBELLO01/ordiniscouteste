@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
@@ -28,6 +28,10 @@ function productHasBranch(product, branch) {
   return branches.includes(branch) || branches.includes('Tutti')
 }
 
+function branchFilterValue(branch) {
+  return (!branch || branch === 'Tutti') ? '' : branch
+}
+
 export default function ProductSelector({ products, onAddItem, selectedBranch, onSelectedBranchChange }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [quantities, setQuantities] = useState({})
@@ -39,13 +43,18 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
-    branca: '',
+    branca: branchFilterValue(selectedBranch),
     taglia: '',
     usato: ''
   })
   const [sortField, setSortField] = useState('nome')
   const [sortOrder, setSortDirection] = useState('asc')
   const [showFilters, setShowFilters] = useState(true)
+
+  // Se la branca in URL cambia (es. reload, back/forward), riallinea il filtro
+  useEffect(() => {
+    setFilters(current => ({ ...current, branca: branchFilterValue(selectedBranch) }))
+  }, [selectedBranch])
 
   const handleQuantityChange = (productId, value) => {
     setQuantities({
