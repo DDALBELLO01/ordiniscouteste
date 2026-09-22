@@ -114,7 +114,7 @@ export default function SettingsManagement() {
         </div>
       </div>
 
-      <div className="detail-section">
+      {/* <div className="detail-section">
         <h4>🔄 Sincronizzazione ScoutingFSE</h4>
         <p>Aggiorna prezzo e disponibilità degli articoli collegati (tramite ID Prodotto e Codice taglia ScoutingFSE) leggendo i dati direttamente dal sito, senza necessità di login.</p>
         <div className="form-actions">
@@ -122,7 +122,7 @@ export default function SettingsManagement() {
             {syncing ? '⏳ Sincronizzazione...' : '🔄 Sincronizza da ScoutingFSE'}
           </button>
         </div>
-      </div>
+      </div> */}
 
     </div>
     {dialogElement}
