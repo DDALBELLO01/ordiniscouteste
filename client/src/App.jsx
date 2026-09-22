@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react'
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import './App.css'
 import PublicBooking from './pages/PublicBooking'
 import AdminPanel from './pages/AdminPanel'
 
 function App() {
-  const [page, setPage] = useState('public')
+  const navigate = useNavigate()
+  const location = useLocation()
+  const page = location.pathname.startsWith('/admin') ? 'admin' : 'public'
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
-  const [selectedBranch, setSelectedBranch] = useState(null)
+  const [selectedBranch, setSelectedBranch] = useState(() => localStorage.getItem('selectedBranch') || null)
   const [uniformGallery, setUniformGallery] = useState(null)
   const [zoomedUniformImage, setZoomedUniformImage] = useState(null)
 
@@ -91,15 +94,23 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (selectedBranch) {
+      localStorage.setItem('selectedBranch', selectedBranch)
+    } else {
+      localStorage.removeItem('selectedBranch')
+    }
+  }, [selectedBranch])
+
   const handleLogout = () => {
     localStorage.removeItem('adminToken')
     setAdminLogged(false)
-    setPage('public')
+    navigate('/')
     setCartSummary({ count: 0, total: 0 })
   }
 
   const handlePageChange = (newPage) => {
-    setPage(newPage)
+    navigate(newPage === 'admin' ? '/admin' : '/')
     if (newPage !== 'public') {
       setCartSummary({ count: 0, total: 0 })
     }
@@ -194,14 +205,16 @@ function App() {
       </header>
 
       <main className="app-main">
-        {page === 'public' && (
-          <PublicBooking
-            onCartChange={setCartSummary}
-            selectedBranch={selectedBranch}
-            onSelectedBranchChange={setSelectedBranch}
-          />
-        )}
-        {page === 'admin' && <AdminPanel onLoggedIn={() => setAdminLogged(true)} />}
+        <Routes>
+          <Route path="/" element={(
+            <PublicBooking
+              onCartChange={setCartSummary}
+              selectedBranch={selectedBranch}
+              onSelectedBranchChange={setSelectedBranch}
+            />
+          )} />
+          <Route path="/admin/*" element={<AdminPanel onLoggedIn={() => setAdminLogged(true)} />} />
+        </Routes>
       </main>
 
       {uniformGallery && (

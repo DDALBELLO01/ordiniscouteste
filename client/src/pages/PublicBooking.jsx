@@ -10,7 +10,14 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
-  const [selectedItems, setSelectedItems] = useState([])
+  const [selectedItems, setSelectedItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cartItems')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [submitted, setSubmitted] = useState(false)
 
   useEffect(() => {
@@ -28,6 +35,7 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
       const total = selectedItems.reduce((sum, item) => sum + (item.quantita * item.prezzo), 0)
       onCartChange({ count, total })
     }
+    localStorage.setItem('cartItems', JSON.stringify(selectedItems))
   }, [selectedItems, onCartChange])
 
   const fetchProducts = async () => {

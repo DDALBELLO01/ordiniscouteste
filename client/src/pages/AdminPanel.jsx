@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import '../styles/AdminPanel.css'
 import LoginForm from '../components/LoginForm'
@@ -9,7 +10,9 @@ import SettingsManagement from '../components/SettingsManagement'
 
 export default function AdminPanel({ onLoggedIn }) {
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('adminToken'))
-  const [activeTab, setActiveTab] = useState('products')
+  const navigate = useNavigate()
+  const location = useLocation()
+  const activeTab = location.pathname.split('/')[2] || 'prodotti'
 
   const handleLogin = (token) => {
     localStorage.setItem('adminToken', token)
@@ -35,36 +38,40 @@ export default function AdminPanel({ onLoggedIn }) {
 
       <div className="admin-tabs">
         <button 
-          className={`tab-btn ${activeTab === 'products' ? 'active' : ''}`}
-          onClick={() => setActiveTab('products')}
+          className={`tab-btn ${activeTab === 'prodotti' ? 'active' : ''}`}
+          onClick={() => navigate('/admin/prodotti')}
         >
           📦 Gestione Prodotti
         </button>
         <button 
-          className={`tab-btn ${activeTab === 'bookings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('bookings')}
+          className={`tab-btn ${activeTab === 'prenotazioni' ? 'active' : ''}`}
+          onClick={() => navigate('/admin/prenotazioni')}
         >
           📋 Prenotazioni
         </button>
         <button 
-          className={`tab-btn ${activeTab === 'tobuy' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tobuy')}
+          className={`tab-btn ${activeTab === 'da-acquistare' ? 'active' : ''}`}
+          onClick={() => navigate('/admin/da-acquistare')}
         >
           🛒 Da Acquistare
         </button>
         <button 
-          className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('settings')}
+          className={`tab-btn ${activeTab === 'impostazioni' ? 'active' : ''}`}
+          onClick={() => navigate('/admin/impostazioni')}
         >
           ⚙️ Impostazioni
         </button>
       </div>
 
       <div className="admin-content">
-        {activeTab === 'products' && <ProductManagement />}
-        {activeTab === 'bookings' && <BookingManagement />}
-        {activeTab === 'tobuy' && <ToBuyManagement />}
-        {activeTab === 'settings' && <SettingsManagement />}
+        <Routes>
+          <Route index element={<Navigate to="prodotti" replace />} />
+          <Route path="prodotti" element={<ProductManagement />} />
+          <Route path="prenotazioni" element={<BookingManagement />} />
+          <Route path="da-acquistare" element={<ToBuyManagement />} />
+          <Route path="impostazioni" element={<SettingsManagement />} />
+          <Route path="*" element={<Navigate to="prodotti" replace />} />
+        </Routes>
       </div>
     </div>
   )
