@@ -9,9 +9,11 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const page = location.pathname.startsWith('/admin') ? 'admin' : 'public'
+  const selectedBranch = page === 'public' && location.pathname !== '/'
+    ? decodeURIComponent(location.pathname.slice(1))
+    : null
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
-  const [selectedBranch, setSelectedBranch] = useState(() => localStorage.getItem('selectedBranch') || null)
   const [uniformGallery, setUniformGallery] = useState(null)
   const [zoomedUniformImage, setZoomedUniformImage] = useState(null)
 
@@ -94,13 +96,26 @@ function App() {
     }
   }, [])
 
+  // Alla prima apertura su "/" torna all'ultima unità scelta, se presente
   useEffect(() => {
-    if (selectedBranch) {
-      localStorage.setItem('selectedBranch', selectedBranch)
+    if (location.pathname === '/') {
+      const saved = localStorage.getItem('selectedBranch')
+      if (saved) {
+        navigate(`/${encodeURIComponent(saved)}`, { replace: true })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const setSelectedBranch = (branch) => {
+    if (branch) {
+      localStorage.setItem('selectedBranch', branch)
+      navigate(`/${encodeURIComponent(branch)}`)
     } else {
       localStorage.removeItem('selectedBranch')
+      navigate('/')
     }
-  }, [selectedBranch])
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken')
@@ -207,6 +222,13 @@ function App() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={(
+            <PublicBooking
+              onCartChange={setCartSummary}
+              selectedBranch={selectedBranch}
+              onSelectedBranchChange={setSelectedBranch}
+            />
+          )} />
+          <Route path="/:branca" element={(
             <PublicBooking
               onCartChange={setCartSummary}
               selectedBranch={selectedBranch}
