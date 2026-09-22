@@ -9,12 +9,25 @@ function parsePrezzo(text) {
   return Number(match[1].replace(/\./g, '').replace(',', '.'));
 }
 
+export function attesa(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function fetchHtml(url) {
   const response = await fetch(url, {
     headers: {
       'user-agent': USER_AGENT,
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'accept-language': 'it-IT,it;q=0.9'
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'accept-language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
+      'sec-ch-ua': '"Chromium";v="120", "Not_A Brand";v="8"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1',
+      'referer': `${BASE_URL}/`
     }
   });
   if (!response.ok) {

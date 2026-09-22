@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase } from './database.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
-import { ottieniProdottoScouting } from './scoutingSync.js';
+import { ottieniProdottoScouting, attesa } from './scoutingSync.js';
  
 
 dotenv.config();
@@ -308,6 +308,7 @@ app.post('/api/admin/scouting/sincronizza-tutti', async (req, res) => {
         console.error(`Errore sincronizzazione ScoutingFSE per ID ${idProdotto}:`, error);
         errori.push({ scouting_id_prodotto: idProdotto, error: error.message });
       }
+      await attesa(400);
     }
 
     res.json({ aggiornati, nonCollegati, errori });
