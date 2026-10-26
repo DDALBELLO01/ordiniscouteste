@@ -62,6 +62,19 @@ Per suggerire una feature:
 
 ### 🧪 Testing
 
+#### Docker con PostgreSQL locale (Linux)
+
+Il servizio `server` usa la rete host per raggiungere PostgreSQL su
+`127.0.0.1:5432` e ascolta direttamente sulla porta 5000 dell'host.
+Il servizio `client` pubblica la porta 3001 e usa `extra_hosts` per risolvere
+`server` verso il gateway dell'host: Nginx puo' quindi inoltrare `/api` a
+`http://server:5000` anche se il backend non appartiene alla rete Docker.
+Le porte 3001 e 5000 devono essere libere. Non e' necessario esporre PostgreSQL
+alle reti Docker.
+
+Dopo modifiche alla rete, esegui `docker compose up -d` per ricreare i servizi
+interessati; un semplice `docker compose restart` non applica la configurazione.
+
 Prima di fare una PR, testa:
 ```bash
 # Backend
@@ -97,4 +110,3 @@ Se aggiungi una feature:
 ---
 
 Grazie per il contributo! 🙏
-

@@ -113,11 +113,14 @@
 
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 20px;
 }
 
 .tab-btn {
+  flex: 1;
+  min-width: 170px;
   padding: 10px 20px;
   background-color: #e2e8f0;
   border: 2px solid #cbd5e0;
@@ -697,17 +700,24 @@ table tbody tr:hover {
 
 @media (max-width: 768px) {
   .admin-header {
-    flex-direction: column;
-    gap: 15px;
-    align-items: flex-start;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+  }
+
+  .admin-header h2 {
+    font-size: 22px;
   }
 
   .admin-tabs {
     width: 100%;
+    gap: 6px;
   }
 
   .tab-btn {
-    flex: 1;
+    min-width: 0;
+    flex: 1 1 calc(50% - 6px);
+    padding: 7px 9px;
+    font-size: 12px;
   }
 
   .form-row {
@@ -728,5 +738,11 @@ table tbody tr:hover {
 
   .modal {
     max-height: 90vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .tab-btn {
+    flex-basis: 100%;
   }
 }

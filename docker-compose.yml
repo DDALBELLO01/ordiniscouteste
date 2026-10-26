@@ -5,15 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
-    ports:
-      - "5000:5000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    network_mode: host
     environment:
       NODE_ENV: production
       PORT: 5000
       FRONTEND_URL: http://localhost:3001
-      DB_HOST: host.docker.internal
+      DB_HOST: 127.0.0.1
       DB_PORT: 5432
       DB_NAME: ordini
       DB_USERNAME: postgres
@@ -34,6 +31,8 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+    extra_hosts:
+      - "server:host-gateway"
     ports:
       - "3001:80"
     depends_on:

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import '../styles/AdminPanel.css'
 import LoginForm from '../components/LoginForm'
 import ProductManagement from '../components/ProductManagement'
@@ -20,11 +19,6 @@ export default function AdminPanel({ onLoggedIn }) {
     onLoggedIn()
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken')
-    setIsLoggedIn(false)
-  }
-
   if (!isLoggedIn) {
     return <LoginForm onLogin={handleLogin} />
   }
@@ -33,7 +27,6 @@ export default function AdminPanel({ onLoggedIn }) {
     <div className="admin-panel">
       <div className="admin-header">
         <h2>Pannello Amministrazione</h2>
-        <button className="btn-logout" onClick={handleLogout}>Logout</button>
       </div>
 
       <div className="admin-tabs">

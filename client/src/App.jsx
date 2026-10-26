@@ -1,21 +1,24 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import './App.css'
 import PublicBooking from './pages/PublicBooking'
 import AdminPanel from './pages/AdminPanel'
+import CartPage from './pages/CartPage'
 
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
-  const page = location.pathname.startsWith('/admin') ? 'admin' : 'public'
-  const selectedBranch = page === 'public' && location.pathname !== '/'
+  const isAdminPage = location.pathname.startsWith('/admin')
+  const isCartPage = location.pathname === '/carrello'
+  const page = isAdminPage ? 'admin' : 'public'
+  const selectedBranch = page === 'public' && location.pathname !== '/' && !isCartPage
     ? decodeURIComponent(location.pathname.slice(1))
     : null
   const [adminLogged, setAdminLogged] = useState(false)
   const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 })
   const [uniformGallery, setUniformGallery] = useState(null)
   const [zoomedUniformImage, setZoomedUniformImage] = useState(null)
+  const [uniformBranchPickerOpen, setUniformBranchPickerOpen] = useState(false)
 
   const uniformImagesByBranch = {
     Coccinelle: [
@@ -131,6 +134,13 @@ function App() {
     }
   }
 
+  const openUniformGallery = (branch) => {
+    setUniformGallery({
+      branch,
+      images: uniformImagesByBranch[branch] || []
+    })
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -141,58 +151,35 @@ function App() {
             <button 
               type="button" 
               className="header-cart-btn"
-              onClick={() => {
-                const cartEl = document.getElementById('cart-section')
-                if (cartEl) {
-                  cartEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
-              }}
-              aria-label="Vai al carrello"
+              onClick={() => navigate('/carrello')}
+              aria-label="Apri carrello"
             >
-              🛒 {cartSummary.count} {cartSummary.count === 1 ? 'articolo' : 'articoli'} (€ {cartSummary.total.toFixed(2)}) ➔
+              🛒 {cartSummary.count} {cartSummary.count === 1 ? 'articolo' : 'articoli'} (€ {cartSummary.total.toFixed(2)})
             </button>
           )}
 
           <nav className="header-nav">
             <button 
-              className={`nav-btn ${page === 'public' ? 'active' : ''}`}
-              onClick={() => { handlePageChange('public'); handleLogout(); setSelectedBranch(null) }}
+              className={`nav-btn ${page === 'public' && !isCartPage ? 'active' : ''}`}
+              onClick={() => {
+                if (selectedBranch) {
+                  setSelectedBranch(null)
+                  return
+                }
+                handlePageChange('public')
+              }}
             >
-              Home
+              {selectedBranch ? 'Cambio unità' : 'Home'}
             </button>
 
-            {page === 'public' && selectedBranch && (
+            {page === 'public' && (
               <button
                 type="button"
-                className="nav-btn nav-btn-secondary"
-                onClick={() => setSelectedBranch(null)}
+                className="nav-btn"
+                onClick={() => setUniformBranchPickerOpen(true)}
               >
-                Cambia unità
+                Uniformi
               </button>
-            )}
-
-            {page === 'public' && (
-              <label className="uniform-header-picker-label">
-                <select
-                  className="uniform-header-picker"
-                  defaultValue=""
-                  onChange={(event) => {
-                    const branch = event.target.value
-                    if (!branch) return
-                    setUniformGallery({
-                      branch,
-                      images: uniformImagesByBranch[branch] || []
-                    })
-                    event.target.value = ''
-                  }}
-                  aria-label="Apri uniforme"
-                >
-                  <option value="">Uniformi</option>
-                  {uniformOptions.map(option => (
-                    <option key={option.label} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
             )}
 
             {adminLogged ? (
@@ -201,7 +188,7 @@ function App() {
                   className={`nav-btn ${page === 'admin' ? 'active' : ''}`}
                   onClick={() => handlePageChange('admin')}
                 >
-                  Admin Panel
+                  Admin
                 </button>
                 <button className="nav-btn logout-btn" onClick={handleLogout}>
                   Logout
@@ -228,6 +215,12 @@ function App() {
               onSelectedBranchChange={setSelectedBranch}
             />
           )} />
+          <Route path="/carrello" element={(
+            <CartPage
+              onCartChange={setCartSummary}
+              selectedBranch={selectedBranch}
+            />
+          )} />
           <Route path="/:branca" element={(
             <PublicBooking
               onCartChange={setCartSummary}
@@ -238,6 +231,34 @@ function App() {
           <Route path="/admin/*" element={<AdminPanel onLoggedIn={() => setAdminLogged(true)} />} />
         </Routes>
       </main>
+
+      {uniformBranchPickerOpen && (
+        <div className="uniform-gallery-overlay" onClick={() => setUniformBranchPickerOpen(false)} role="dialog" aria-modal="true" aria-label="Selezione uniformi">
+          <div className="uniform-branch-picker" onClick={(event) => event.stopPropagation()}>
+            <div className="uniform-gallery-header">
+              <h3>Uniformi</h3>
+              <button type="button" className="uniform-gallery-close" onClick={() => setUniformBranchPickerOpen(false)} aria-label="Chiudi selezione uniformi">
+                ×
+              </button>
+            </div>
+            <div className="uniform-branch-picker-grid">
+              {uniformOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="uniform-branch-picker-btn"
+                  onClick={() => {
+                    openUniformGallery(option.value)
+                    setUniformBranchPickerOpen(false)
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {uniformGallery && (
         <div className="uniform-gallery-overlay" onClick={() => setUniformGallery(null)} role="dialog" aria-modal="true" aria-label="Galleria uniformi">

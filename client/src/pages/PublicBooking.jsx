@@ -2,11 +2,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import '../styles/PublicBooking.css'
 import ProductSelector from '../components/ProductSelector'
-import BookingForm from '../components/BookingForm'
-import { useAppDialog } from '../components/AppDialog'
 
 export default function PublicBooking({ onCartChange, selectedBranch, onSelectedBranchChange }) {
-  const { showMessage, dialogElement } = useAppDialog()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
@@ -18,7 +15,6 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
       return []
     }
   })
-  const [submitted, setSubmitted] = useState(false)
 
   useEffect(() => {
     fetchProducts()
@@ -79,42 +75,6 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
     })
   }
 
-  const handleRemoveItem = (productId, specialita) => {
-    setSelectedItems(currentItems => currentItems.filter(item => !(item.prodotto_id === productId && item.specialita === specialita)))
-  }
-
-  const handleChangeItemQuantity = (productId, specialita, change) => {
-    setSelectedItems(currentItems => currentItems
-      .map(item => item.prodotto_id === productId && item.specialita === specialita
-        ? { ...item, quantita: Math.max(0, item.quantita + change) }
-        : item
-      )
-      .filter(item => item.quantita > 0)
-    )
-  }
-
-  const handleSubmitBooking = async (bookingData) => {
-    try {
-      const response = await axios.post('/api/prenotazioni', {
-        ...bookingData,
-        items: selectedItems.map(item => ({
-          prodotto_id: item.prodotto_id,
-          quantita: item.quantita,
-          specialita: item.specialita
-        }))
-      })
-      setSubmitted(true)
-      setSelectedItems([])
-      if (!response.data.emailSent) {
-        showMessage('Prenotazione salvata, ma non è stato possibile inviare le email. Contatta l’amministratore.', 'Email non inviate')
-      }
-      setTimeout(() => setSubmitted(false), 5000)
-    } catch (error) {
-      console.error('Errore prenotazione:', error)
-      showMessage('Errore nella prenotazione: ' + (error.response?.data?.error || error.message), 'Errore prenotazione')
-    }
-  }
-
   if (loading) {
     return <div className="loading">Caricamento...</div>
   }
@@ -131,69 +91,16 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
   return (
     <div className="public-booking">
       <div className="booking-container">
-        <div className="booking-grid">
-          <div className="products-section">
-            <h2>Catalogo Materiale</h2>
-            <ProductSelector 
-              products={products}
-              onAddItem={handleAddItem}
-              selectedBranch={selectedBranch}
-              onSelectedBranchChange={onSelectedBranchChange}
-            />
-          </div>
-
-          <div className="cart-section" id="cart-section">
-            <h2>Riepilogo Prenotazione</h2>
-            <div className="cart">
-              {selectedItems.length === 0 ? (
-                <p className="empty-cart">Nessun articolo selezionato</p>
-              ) : (
-                <>
-                  <div className="cart-items">
-                    {selectedItems.map(item => (
-                      <div key={`${item.prodotto_id}-${item.specialita || ''}`} className="cart-item">
-                        <div className="item-info">
-                          <strong>{item.nome}</strong>
-                          <div className="cart-quantity-controls">
-                            <button type="button" onClick={() => handleChangeItemQuantity(item.prodotto_id, item.specialita, -1)} aria-label="Diminuisci quantità">−</button>
-                            <span>{item.quantita}</span>
-                            <button type="button" onClick={() => handleChangeItemQuantity(item.prodotto_id, item.specialita, 1)} aria-label="Aumenta quantità">+</button>
-                          </div>
-                          <p>Prezzo: € {(item.quantita * item.prezzo).toFixed(2)}</p>
-                        </div>
-                        <button 
-                          className="btn-remove"
-                          onClick={() => handleRemoveItem(item.prodotto_id, item.specialita)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="cart-total">
-                    Totale: € {selectedItems.reduce((sum, item) => sum + (item.quantita * item.prezzo), 0).toFixed(2)}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {selectedItems.length > 0 && (
-              <BookingForm 
-                items={selectedItems}
-                onSubmit={handleSubmitBooking}
-                submitted={submitted}
-              />
-            )}
-          </div>
+        <div className="products-section">
+          <h2>Catalogo Materiale</h2>
+          <ProductSelector 
+            products={products}
+            onAddItem={handleAddItem}
+            selectedBranch={selectedBranch}
+            onSelectedBranchChange={onSelectedBranchChange}
+          />
         </div>
-
-        {submitted && (
-          <div className="success-message">
-            ✅ Prenotazione confermata! Riceverai presto un'email di conferma.
-          </div>
-        )}
       </div>
-      {dialogElement}
     </div>
   )
 }
