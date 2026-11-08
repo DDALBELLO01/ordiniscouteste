@@ -14,10 +14,11 @@ const { Pool } = pg;
 
 const tables = {
   prodotti: ['id', 'nome', 'tipologia', 'branca', 'taglia', 'specialita', 'immagine', 'quantita_magazzino', 'prezzo', 'usato', 'mostra_home', 'created_at', 'updated_at'],
-  prenotazioni: ['id', 'nome_prenotante', 'email_prenotante', 'branca_riferimento', 'data_prenotazione', 'stato', 'note', 'created_at', 'updated_at'],
-  dettagli_prenotazioni: ['id', 'prenotazione_id', 'prodotto_id', 'quantita', 'prezzo_unitario', 'specialita'],
+  prenotazioni: ['id', 'nome_prenotante', 'email_prenotante', 'branca_riferimento', 'data_prenotazione', 'stato', 'note', 'archiviata', 'data_archiviazione', 'metodo_pagamento', 'created_at', 'updated_at'],
+  dettagli_prenotazioni: ['id', 'prenotazione_id', 'prodotto_id', 'quantita', 'prezzo_unitario', 'specialita', 'acquistato', 'stato', 'pagamento_registrato'],
   configurazione: ['chiave', 'valore', 'updated_at'],
-  admin_users: ['id', 'email', 'password_hash', 'created_at']
+  admin_users: ['id', 'nome', 'email', 'password_hash', 'ruolo', 'branche', 'created_at'],
+  notifiche_stato: ['id', 'payload', 'stato', 'tentativi', 'prossimo_tentativo', 'ultimo_errore']
 };
 
 async function migrate() {
@@ -58,6 +59,9 @@ async function migrate() {
           `INSERT INTO ${table} (${validColumns.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
           validColumns.map(column => row[column] ?? null)
         );
+      }
+      if (table === 'dettagli_prenotazioni' && !tableSqliteCols.includes('stato') && tableSqliteCols.includes('acquistato')) {
+        await client.query("UPDATE dettagli_prenotazioni SET stato = 'ordinato' WHERE acquistato = 1 AND stato = 'prenotato'");
       }
       console.log(`${table}: ${rows.length} righe`);
     }

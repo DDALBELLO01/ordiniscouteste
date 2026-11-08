@@ -62,6 +62,61 @@ Per suggerire una feature:
 
 ### 🧪 Testing
 
+#### Prenotazioni e accesso capi unità
+
+- L'admin vede gli articoli raggruppati per nome, taglia, specialità e
+  condizione nuovo/usato, anche se presenti in più schede prodotto; i
+  dettagli mostrano nome, email, branca, data e quantità di ogni ordinante.
+  I filtri limitano anche le righe interessate dalla selezione massiva.
+- Lo stato appartiene alla singola riga articolo: Prenotato, Pagato,
+  Non disponibile, Non pagato, Ordinato, Ricevuto. Una riga con quantità
+  maggiore di uno cambia stato per tutta la sua quantità.
+- Passare a Ricevuto, Non disponibile o Non pagato crea una notifica per
+  prenotazione, con i soli articoli modificati. Reimpostare lo stesso stato
+  non crea un'altra email; uscire da quello stato e tornarci sì.
+- Le notifiche sono salvate nel database insieme al cambio stato. Il server
+  controlla la coda ogni 10 secondi e ritenta gli errori SMTP con attese
+  crescenti fino a un'ora. L'admin vede i conteggi di email in coda e in errore.
+  Un arresto subito dopo l'accettazione SMTP ma prima della conferma nel
+  database può causare un reinvio: la consegna è almeno una volta, non
+  esattamente una volta. La configurazione SMTP esistente resta necessaria.
+- Nella scheda **Capi Unità** l'admin crea account con nome, email, password
+  di almeno 10 caratteri e una o più branche. I capi vedono solo le
+  prenotazioni delle branche assegnate, raggruppate per persona/prenotazione,
+  e possono confermare il pagamento dell'intera prenotazione, anche quando
+  contiene articoli non disponibili. La conferma del pagamento è conservata
+  separatamente: gli stati logistici Ordinato, Ricevuto e Non disponibile non
+  vengono sovrascritti. L'admin può impostare Non pagato per revocare la
+  conferma dei singoli articoli.
+- Le password dei capi sono memorizzate con scrypt; le sessioni durano
+  12 ore e sono verificate dal server. L'admin continua a usare le credenziali
+  configurate. Dopo l'aggiornamento è necessario accedere nuovamente.
+  Eliminare un account revoca anche le sue sessioni.
+  Le denominazioni storiche Coccinelle, Lupetti, Rover e Capi sono riconosciute
+  rispettivamente come Cerchio, Branco, Clan e RS.
+- Le migrazioni automatiche supportano SQLite e PostgreSQL. I vecchi
+  articoli segnati come acquistati diventano Ordinati; gli altri Prenotati.
+  Lo storico archiviato rimane consultabile, ma **Archivia tutto** è rimosso.
+  Gli stati non archiviano automaticamente prenotazioni né modificano
+  giacenze. L'azione preesistente **Da acquistare** mantiene la gestione
+  giacenze e imposta Ordinato, limitandosi alle righe Prenotate o Pagate.
+  La modifica della prenotazione conserva identità, stato e pagamento delle
+  righe esistenti; le righe nuove iniziano come Prenotate.
+
+Per verificare API, permessi, pagamenti completi, transizioni, migrazioni,
+conservazione degli stati durante le modifiche e retry delle notifiche:
+
+```bash
+DB_HOST= npm test --prefix server
+npm run build --prefix server
+npm run build --prefix client
+```
+
+I test usano un file SQLite temporaneo se `DB_HOST` non è configurato.
+Per eseguirli con PostgreSQL, configurare le variabili `DB_*` verso un
+database **temporaneo e vuoto**: non usare il database di produzione.
+L'esecuzione su PostgreSQL richiede anche `WORKFLOW_TEST_POSTGRES=1`.
+
 #### Docker con PostgreSQL locale (Linux)
 
 Il servizio `server` usa la rete host per raggiungere PostgreSQL su

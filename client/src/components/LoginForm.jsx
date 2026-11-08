@@ -18,9 +18,9 @@ export default function LoginForm({ onLogin }) {
         email,
         password
       })
-      onLogin(response.data.token)
+      onLogin(response.data.token, response.data.user)
     } catch (error) {
-      setError('Credenziali non valide')
+      setError(error.response?.data?.error || 'Errore di connessione durante l’accesso')
       console.error('Errore login:', error)
     } finally {
       setLoading(false)
@@ -30,7 +30,7 @@ export default function LoginForm({ onLogin }) {
   return (
     <div className="login-form-container">
       <form className="login-form" onSubmit={handleSubmit}>
-        <h2>Accesso Admin</h2>
+        <h2>Accesso Admin e Capi Unità</h2>
         {error && <div className="error-message">{error}</div>}
         
         <div className="form-group">

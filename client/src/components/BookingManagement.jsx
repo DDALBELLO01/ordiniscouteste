@@ -11,7 +11,6 @@ export default function BookingManagement() {
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [viewMode, setViewMode] = useState('attive') // 'attive' | 'archiviate'
-  const [archiving, setArchiving] = useState(false)
   const [showFilters, setShowFilters] = useState(true)
   const [filters, setFilters] = useState({ search: '', branca: '', dataDa: '', dataA: '' })
 
@@ -93,34 +92,6 @@ export default function BookingManagement() {
     }
   }
 
-  const handleArchiveAll = async () => {
-    if (!await showConfirm('Confermi l\'archiviazione di TUTTE le prenotazioni attive? Verranno spostate nella sezione "Archiviate" e separate da quelle nuove.')) {
-      return
-    }
-
-    setArchiving(true)
-    try {
-      const response = await axios.post('/api/admin/prenotazioni/archivia-tutte')
-      const riepiloghi = response.data.riepiloghi || {}
-      const riepilogo = riepiloghi.inviati > 0
-        ? ` Inviati ${riepiloghi.inviati} riepiloghi ai capi unità configurati.`
-        : ' Nessun riepilogo inviato: non c’erano ordini per le branche configurate oppure l’invio SMTP è fallito.'
-      const falliti = riepiloghi.falliti?.length
-        ? ` Errore invio: ${riepiloghi.falliti.join(', ')}.`
-        : ''
-      const senzaOrdini = riepiloghi.senzaOrdini?.length
-        ? ` Nessun ordine per: ${riepiloghi.senzaOrdini.join(', ')}.`
-        : ''
-      showMessage(`${response.data.archiviate} prenotazioni archiviate con successo.${riepilogo}${falliti}${senzaOrdini}`, 'Archiviazione completata')
-      fetchBookings(viewMode)
-    } catch (error) {
-      console.error('Errore archiviazione:', error)
-      showMessage('Errore archiviazione prenotazioni', 'Errore')
-    } finally {
-      setArchiving(false)
-    }
-  }
-
   const filterOptions = useMemo(() => (
     [...new Set(bookings.map(booking => booking.branca_riferimento).filter(Boolean))].sort()
   ), [bookings])
@@ -184,16 +155,6 @@ export default function BookingManagement() {
               📦 Archiviate
             </button>
           </div>
-          {viewMode === 'attive' && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={handleArchiveAll}
-              disabled={archiving || bookings.length === 0}
-            >
-              {archiving ? '⏳ Archiviazione...' : '📦 Archivia tutto'}
-            </button>
-          )}
           <button 
             className={`btn-toggle ${bookingsEnabled ? 'enabled' : 'disabled'}`}
             onClick={handleToggleBookings}
@@ -297,6 +258,7 @@ export default function BookingManagement() {
 }
 
 function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
+  const { showMessage, dialogElement } = useAppDialog()
   const [booking, setBooking] = useState(null)
   const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -327,8 +289,9 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
         branca_riferimento: response.data.branca_riferimento || '',
         note: response.data.note || '',
         items: response.data.items.map(item => ({
+          id: item.id,
           prodotto_id: item.prodotto_id,
-          nome: item.nome,
+          nome: `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}`,
           quantita: item.quantita,
           prezzo_unitario: item.prezzo_unitario,
           specialita: item.specialita || null
@@ -461,7 +424,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
                   <tbody>
                     {booking.items.map((item, idx) => (
                       <tr key={idx}>
-                        <td>{item.nome}</td>
+                        <td>{item.nome}{item.taglia ? ` (${item.taglia})` : ''}<br />{item.stato?.replaceAll('_', ' ')}</td>
                         <td>{item.quantita}</td>
                         <td>€ {item.prezzo_unitario.toFixed(2)}</td>
                         <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
@@ -596,6 +559,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
             </div>
           )}
         </div>
+        {dialogElement}
       </div>
     </div>
   )

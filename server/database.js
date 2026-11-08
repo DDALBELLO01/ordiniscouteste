@@ -2,27 +2,100 @@ import pg from 'pg';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, 'database', 'ordini.db');
 
 let db = null;
+const transactionContext = new AsyncLocalStorage();
+let sqliteQueue = Promise.resolve();
 
-export async function initializeDatabase() {
+function serializeSqlite(operation) {
+  const result = sqliteQueue.then(operation);
+  // Keep scheduling usable after failures; callers still receive the original rejection.
+  sqliteQueue = result.catch(() => {});
+  return result;
+}
+
+export async function withTransaction(operation) {
+  if (transactionContext.getStore()) return operation(getDatabase());
+  const execute = async (connection) => {
+    await connection.run('BEGIN');
+    try {
+      const result = await transactionContext.run(connection, () => operation(connection));
+      await connection.run('COMMIT');
+      return result;
+    } catch (error) {
+      await connection.run('ROLLBACK');
+      throw error;
+    }
+  };
+  if (db.pool) {
+    const client = await db.pool.connect();
+    try {
+      return await execute(new PostgresAdapter(client));
+    } finally {
+      client.release();
+    }
+  }
+  return serializeSqlite(() => execute(db.connection));
+}
+
+async function initializeWorkflowSchema() {
+  const sqlite = !db.pool;
+  const addColumn = async (table, column, definition) => {
+    if (sqlite) {
+      const columns = await db.all(`PRAGMA table_info(${table})`);
+      if (columns.some(item => item.name === column)) return;
+    }
+    await db.run(`ALTER TABLE ${table} ADD COLUMN ${sqlite ? '' : 'IF NOT EXISTS '}${column} ${definition}`);
+  };
+  const oldColumns = sqlite ? await db.all('PRAGMA table_info(dettagli_prenotazioni)') : await db.all(
+    "SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'dettagli_prenotazioni' AND table_schema = current_schema()"
+  );
+  await addColumn('dettagli_prenotazioni', 'stato', "TEXT NOT NULL DEFAULT 'prenotato'");
+  if (!oldColumns.some(column => column.name === 'stato')) {
+    await db.run("UPDATE dettagli_prenotazioni SET stato = 'ordinato' WHERE acquistato = 1");
+  }
+  await addColumn('dettagli_prenotazioni', 'pagamento_registrato', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn('admin_users', 'nome', "TEXT NOT NULL DEFAULT ''");
+  await addColumn('admin_users', 'ruolo', "TEXT NOT NULL DEFAULT 'capo_unita'");
+  await addColumn('admin_users', 'branche', "TEXT NOT NULL DEFAULT '[]'");
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS sessioni (
+      token_hash TEXT PRIMARY KEY,
+      utente_id INTEGER REFERENCES admin_users(id) ON DELETE CASCADE,
+      scadenza BIGINT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS notifiche_stato (
+      id TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      stato TEXT NOT NULL DEFAULT 'pending',
+      tentativi INTEGER NOT NULL DEFAULT 0,
+      prossimo_tentativo BIGINT NOT NULL DEFAULT 0,
+      ultimo_errore TEXT
+    );
+  `);
+}
+
+export async function initializeDatabase({ filename = DB_PATH } = {}) {
   if (process.env.DB_HOST) {
-    return initializePostgresDatabase();
+    await initializePostgresDatabase();
+    await initializeWorkflowSchema();
+    return db;
   }
 
   const { default: sqlite3 } = await import('sqlite3');
   const { open } = await import('sqlite');
 
-  const dbDir = path.dirname(DB_PATH);
+  const dbDir = path.dirname(filename);
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
   db = await open({
-    filename: DB_PATH,
+    filename,
     driver: sqlite3.Database
   });
 
@@ -178,6 +251,15 @@ export async function initializeDatabase() {
     ['pagamento_carta_abilitato', 'false']
   );
 
+  const connection = db;
+  db = { connection };
+  for (const method of ['all', 'get', 'run', 'exec', 'close']) {
+    db[method] = (...args) => {
+      const current = transactionContext.getStore();
+      return current ? current[method](...args) : serializeSqlite(() => connection[method](...args));
+    };
+  }
+  await initializeWorkflowSchema();
   return db;
 }
 
@@ -323,7 +405,7 @@ export function getDatabase() {
   if (!db) {
     throw new Error('Database not initialized');
   }
-  return db;
+  return transactionContext.getStore() || db;
 }
 
 export async function closeDatabase() {

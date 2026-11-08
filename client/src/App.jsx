@@ -4,6 +4,8 @@ import './App.css'
 import PublicBooking from './pages/PublicBooking'
 import AdminPanel from './pages/AdminPanel'
 import CartPage from './pages/CartPage'
+import axios from 'axios'
+import './api'
 
 function App() {
   const navigate = useNavigate()
@@ -99,6 +101,12 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const expire = () => setAdminLogged(false)
+    window.addEventListener('session-expired', expire)
+    return () => window.removeEventListener('session-expired', expire)
+  }, [])
+
   // Alla prima apertura su "/" torna all'ultima unità scelta, se presente
   useEffect(() => {
     if (location.pathname === '/') {
@@ -120,7 +128,12 @@ function App() {
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await axios.post('/api/admin/logout')
+    } catch (error) {
+      console.error('Errore chiusura sessione:', error)
+    }
     localStorage.removeItem('adminToken')
     setAdminLogged(false)
     navigate('/')

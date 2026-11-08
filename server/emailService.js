@@ -5,6 +5,36 @@ dotenv.config();
 
 let transporter = null;
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+export function buildBookingStatusMessage(booking) {
+  const messages = {
+    ricevuto: ['Articoli ricevuti', 'I seguenti articoli sono arrivati. Contatta i responsabili per concordare il ritiro.'],
+    non_disponibile: ['Articoli non disponibili', 'I seguenti articoli non sono disponibili. Contatta i responsabili per informazioni e per eventuali importi già versati.'],
+    non_pagato: ['Pagamento non registrato', 'Per i seguenti articoli il pagamento non risulta registrato. Contatta il tuo capo unità per regolarizzare o verificare il pagamento.']
+  };
+  const message = messages[booking.stato];
+  if (!message) throw new Error('Stato email non valido');
+  const items = booking.items.map(item =>
+    `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}${item.specialita ? ` - ${item.specialita}` : ''}: ${item.quantita}`
+  );
+  const text = `Ciao ${booking.nome_prenotante},\n\n${message[1]}\n\n${items.join('\n')}\n\nPrenotazione: ${booking.id}`;
+  return {
+    from: process.env.SMTP_USER,
+    to: booking.email_prenotante,
+    subject: `${message[0]} - Prenotazione Scout ${booking.id}`,
+    text,
+    html: `<p>Ciao ${escapeHtml(booking.nome_prenotante)},</p><p>${escapeHtml(message[1])}</p><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>Prenotazione: ${escapeHtml(booking.id)}</p>`
+  };
+}
+
+export async function sendBookingStatusEmail(booking) {
+  if (!transporter) throw new Error('Servizio email non inizializzato');
+  await sendMailWithRetry(buildBookingStatusMessage(booking));
+}
+
 export function initializeEmailService() {
   const port = Number(process.env.SMTP_PORT || 587);
 
