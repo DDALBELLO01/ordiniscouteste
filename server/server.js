@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase, withTransaction } from './database.js';
-import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch } from './bookingWorkflow.js';
+import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch, assertBookingAccess, queueLeaderBookingNotifications, deleteBookingItems } from './bookingWorkflow.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
 import { ottieniProdottoScouting, attesa } from './scoutingSync.js';
  
@@ -132,68 +132,69 @@ app.post('/api/prenotazioni', async (req, res) => {
       }
     }
 
-    const prenotazione_id = uuidv4();
-    
-    // Inserire prenotazione
-    await db.run(
-      'INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, note) VALUES (?, ?, ?, ?, ?)',
-      [prenotazione_id, nome_prenotante, trimmedEmail, branca_riferimento, note || null]
-    );
+    const { bookingData, leaderEmailsQueued } = await withTransaction(async db => {
+      const prenotazione_id = uuidv4();
+      await db.run(
+        'INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, note) VALUES (?, ?, ?, ?, ?)',
+        [prenotazione_id, nome_prenotante, trimmedEmail, branca_riferimento, note || null]
+      );
 
-    // Inserire dettagli prenotazione E DECREMENTARE QUANTITÀ
-    for (const item of items) {
-      const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
-      if (prodotto) {
+      for (const item of items) {
+        const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
+        if (!prodotto) {
+          const error = new Error(`Prodotto ${item.prodotto_id} non trovato`);
+          error.status = 404;
+          throw error;
+        }
         await db.run(
           'INSERT INTO dettagli_prenotazioni (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita) VALUES (?, ?, ?, ?, ?)',
           [prenotazione_id, item.prodotto_id, item.quantita, prodotto.prezzo, item.specialita || null]
         );
-
-        // DECREMENTARE QUANTITÀ SE IL PRODOTTO HA UN LIMITE
         if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
-          const nuova_quantita = prodotto.quantita_magazzino - item.quantita;
           await db.run(
-            'UPDATE prodotti SET quantita_magazzino = ? WHERE id = ?',
-            [nuova_quantita, item.prodotto_id]
+            'UPDATE prodotti SET quantita_magazzino = quantita_magazzino - ? WHERE id = ?',
+            [item.quantita, item.prodotto_id]
           );
         }
       }
-    }
 
-    // Recuperare i dettagli per email
-    const dettagli = await db.all(
-      `SELECT dp.*, p.nome FROM dettagli_prenotazioni dp 
-       JOIN prodotti p ON dp.prodotto_id = p.id 
-       WHERE dp.prenotazione_id = ?`,
-      [prenotazione_id]
-    );
+      const dettagli = await db.all(
+        `SELECT dp.*, p.nome, p.taglia FROM dettagli_prenotazioni dp
+         JOIN prodotti p ON dp.prodotto_id = p.id
+         WHERE dp.prenotazione_id = ?`,
+        [prenotazione_id]
+      );
 
-    const bookingData = {
-      id: prenotazione_id,
-      nome_prenotante,
-      email_prenotante: trimmedEmail,
-      branca_riferimento,
-      data_prenotazione: new Date().toISOString(),
-      note,
-      items: dettagli.map(d => ({
-        nome: d.specialita ? `${d.nome} - ${d.specialita}` : d.nome,
-        quantita: d.quantita,
-        prezzo_unitario: d.prezzo_unitario
-      }))
-    };
+      const bookingData = {
+        id: prenotazione_id,
+        nome_prenotante,
+        email_prenotante: trimmedEmail,
+        branca_riferimento,
+        data_prenotazione: new Date().toISOString(),
+        note,
+        items: dettagli.map(d => ({
+          nome: `${d.nome}${d.taglia ? ` (${d.taglia})` : ''}${d.specialita ? ` - ${d.specialita}` : ''}`,
+          quantita: d.quantita,
+          prezzo_unitario: d.prezzo_unitario
+        }))
+      };
+      const leaderEmailsQueued = await queueLeaderBookingNotifications(db, bookingData);
+      return { bookingData, leaderEmailsQueued };
+    });
 
     // Inviare email
     const customerEmailSent = await sendBookingEmail(trimmedEmail, bookingData);
     const adminEmailSent = await sendAdminNotification(bookingData);
 
     res.status(201).json({
-      id: prenotazione_id,
+      id: bookingData.id,
       message: 'Prenotazione creata con successo',
-      emailSent: customerEmailSent && adminEmailSent
+      emailSent: customerEmailSent && adminEmailSent,
+      leaderEmailsQueued
     });
   } catch (error) {
     console.error('Errore creazione prenotazione:', error);
-    res.status(500).json({ error: 'Errore creazione prenotazione' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore creazione prenotazione' });
   }
 });
 
@@ -344,6 +345,7 @@ app.get('/api/admin/prenotazioni/:id', async (req, res) => {
   try {
     const db = getDatabase();
     const prenotazione = await db.get('SELECT * FROM prenotazioni WHERE id = ?', [req.params.id]);
+    await assertBookingAccess(db, req.user, prenotazione);
     const dettagli = await db.all(
       `SELECT dp.*, p.nome, p.taglia FROM dettagli_prenotazioni dp
        JOIN prodotti p ON dp.prodotto_id = p.id
@@ -353,7 +355,7 @@ app.get('/api/admin/prenotazioni/:id', async (req, res) => {
     res.json({ ...prenotazione, items: dettagli });
   } catch (error) {
     console.error('Errore lettura prenotazione:', error);
-    res.status(500).json({ error: 'Errore lettura prenotazione' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore lettura prenotazione' });
   }
 });
 
@@ -365,9 +367,10 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
       const bookingId = req.params.id;
 
       const existing = await db.get(`SELECT * FROM prenotazioni WHERE id = ? ${db.pool ? 'FOR UPDATE' : ''}`, [bookingId]);
-      if (!existing) {
-        const error = new Error('Prenotazione non trovata');
-        error.status = 404;
+      await assertBookingAccess(db, req.user, existing, { editing: true, branch: branca_riferimento });
+      if (req.user.ruolo === 'capo_unita' && Array.isArray(items) && !items.length) {
+        const error = new Error('La prenotazione deve contenere almeno un articolo');
+        error.status = 400;
         throw error;
       }
 
@@ -428,7 +431,9 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
 
         for (const { item, oldItem } of resolvedItems) {
           const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
-          const prezzoUnitario = Number(item.prezzo_unitario ?? prodotto?.prezzo);
+          const prezzoUnitario = Number(req.user.ruolo === 'capo_unita'
+            ? oldItem?.prezzo_unitario ?? prodotto?.prezzo
+            : item.prezzo_unitario ?? prodotto?.prezzo);
           if (!prodotto || !Number.isFinite(prezzoUnitario) || prezzoUnitario < 0) {
             const error = new Error('Prodotto o prezzo non valido');
             error.status = 400;
@@ -579,25 +584,14 @@ app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
 app.delete('/api/admin/prenotazioni/:id', async (req, res) => {
   try {
     const deleted = await withTransaction(async db => {
-      if (db.pool) await db.get('SELECT id FROM prenotazioni WHERE id = ? FOR UPDATE', [req.params.id]);
+      const booking = await db.get(`SELECT * FROM prenotazioni WHERE id = ? ${db.pool ? 'FOR UPDATE' : ''}`, [req.params.id]);
+      await assertBookingAccess(db, req.user, booking, { editing: true });
       const dettagli = await db.all(
-        'SELECT prodotto_id, quantita FROM dettagli_prenotazioni WHERE prenotazione_id = ? AND (acquistato = 0 OR acquistato IS NULL)',
+        'SELECT * FROM dettagli_prenotazioni WHERE prenotazione_id = ? ORDER BY id',
         [req.params.id]
       );
 
-      for (const dettaglio of dettagli) {
-        await db.run(
-          `UPDATE prodotti
-           SET quantita_magazzino = quantita_magazzino + ?
-           WHERE id = ? AND quantita_magazzino IS NOT NULL`,
-          [dettaglio.quantita, dettaglio.prodotto_id]
-        );
-      }
-
-      await db.run(
-        'DELETE FROM dettagli_prenotazioni WHERE prenotazione_id = ?',
-        [req.params.id]
-      );
+      await deleteBookingItems(db, dettagli);
 
       const result = await db.run('DELETE FROM prenotazioni WHERE id = ?', [req.params.id]);
       return result.changes;
@@ -606,7 +600,7 @@ app.delete('/api/admin/prenotazioni/:id', async (req, res) => {
     res.json({ message: 'Prenotazione eliminata' });
   } catch (error) {
     console.error('Errore eliminazione prenotazione:', error);
-    res.status(500).json({ error: 'Errore eliminazione prenotazione' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore eliminazione prenotazione' });
   }
 });
 

@@ -67,11 +67,30 @@ Per suggerire una feature:
 - L'admin vede gli articoli raggruppati per nome, taglia, specialità e
   condizione nuovo/usato, anche se presenti in più schede prodotto; i
   dettagli mostrano nome, email, branca, data e quantità di ogni ordinante.
+  Il popup dettagli usa una larghezza fino a 1400 px; sotto 900 px presenta
+  schede con etichette per mostrare tutti i campi senza scorrimento orizzontale.
+  Con molti ordinanti rimane disponibile lo scorrimento verticale dei dettagli,
+  mentre titolo e azione di conferma restano visibili.
   I filtri limitano anche le righe interessate dalla selezione massiva.
+  **Elimina selezionati** elimina le righe articolo selezionate per l'admin
+  e le intere prenotazioni selezionate per il capo unità, solo se tutte sono
+  della sua branca, attive e interamente da pagare. Serve conferma esplicita.
+  Il server esegue l'intera selezione in una transazione: un errore annulla
+  tutte le eliminazioni. Le giacenze limitate delle righe non acquistate sono
+  ripristinate; le prenotazioni rimaste senza articoli vengono eliminate.
+  Lo storico archiviato non consente eliminazioni massive.
+  Le viste per taglia e per prenotazione hanno collegamenti reciproci e
+  gli stessi pulsanti **Attive / Archiviate**. Nella vista per prenotazione
+  l'admin può selezionare le prenotazioni attive e **Archivia selezionate**.
+  La selezione globale riguarda solo i risultati filtrati e viene azzerata
+  cambiando filtri o vista. L'archiviazione richiede conferma, è atomica e
+  registra la data senza cambiare righe, pagamenti, giacenze o inviare email.
+  Il menu del nuovo stato usa lo stile del pannello, con focus visibile
+  da tastiera e stato disabilitato distinto, mantenendo il select nativo.
 - Lo stato appartiene alla singola riga articolo: Prenotato, Pagato,
-  Non disponibile, Non pagato, Ordinato, Ricevuto. Una riga con quantità
+  Non disponibile, Ordinato, Ricevuto. Una riga con quantità
   maggiore di uno cambia stato per tutta la sua quantità.
-- Passare a Ricevuto, Non disponibile o Non pagato crea una notifica per
+- Passare a Ricevuto o Non disponibile crea una notifica per
   prenotazione, con i soli articoli modificati. Reimpostare lo stesso stato
   non crea un'altra email; uscire da quello stato e tornarci sì.
 - Le notifiche sono salvate nel database insieme al cambio stato. Il server
@@ -80,22 +99,51 @@ Per suggerire una feature:
   Un arresto subito dopo l'accettazione SMTP ma prima della conferma nel
   database può causare un reinvio: la consegna è almeno una volta, non
   esattamente una volta. La configurazione SMTP esistente resta necessaria.
+- Quando una persona conferma la prenotazione dal carrello, il server accoda
+  una mail a ogni account capo unità con la branca corrispondente (anche per
+  le denominazioni storiche). La mail contiene prenotante, articoli, taglie,
+  quantità, totale da pagare e note. Non attende pagamento o ricezione articoli.
+  Il formato HTML usa stili inline e tabelle compatibili con i client email:
+  intestazione, dati del prenotante, articoli e totale evidenziato. Le note
+  compaiono solo se presenti; rimane disponibile la versione testuale.
+  Prenotazione e notifiche ai capi sono salvate nella stessa transazione;
+  gli errori SMTP vengono ritentati dalla coda esistente. Gli indirizzi sono
+  quelli degli account **Capi Unità**, non della vecchia configurazione email.
+  Senza un account corrispondente, la prenotazione resta consentita e il server
+  registra un avviso. Non vengono inviate notifiche retroattive.
 - Nella scheda **Capi Unità** l'admin crea account con nome, email, password
-  di almeno 10 caratteri e una o più branche. I capi vedono solo le
+  di almeno 10 caratteri e una sola branca, selezionata tramite radio button.
+  Anche il server rifiuta assegnazioni vuote o multiple. Eventuali account
+  preesistenti con più branche non possono gestire prenotazioni: l'admin deve
+  ricrearli con la branca corretta, senza assegnazioni automatiche.
+  I capi vedono solo le
   prenotazioni delle branche assegnate, raggruppate per persona/prenotazione,
   e possono confermare il pagamento dell'intera prenotazione, anche quando
   contiene articoli non disponibili. La conferma del pagamento è conservata
   separatamente: gli stati logistici Ordinato, Ricevuto e Non disponibile non
-  vengono sovrascritti. L'admin può impostare Non pagato per revocare la
-  conferma dei singoli articoli.
+  vengono sovrascritti. I capi possono modificare dati e articoli o eliminare
+  le prenotazioni attive della propria branca solo se nessuna riga risulta
+  pagata. I controlli sono applicati anche dal server; non è consentito
+  spostare prenotazioni in altre branche né alterare i prezzi degli articoli.
 - Le password dei capi sono memorizzate con scrypt; le sessioni durano
   12 ore e sono verificate dal server. L'admin continua a usare le credenziali
   configurate. Dopo l'aggiornamento è necessario accedere nuovamente.
+  Il ricaricamento della pagina ripristina il ruolo dal server, senza cache.
+  Tutte le risposte API amministrative usano `Cache-Control: no-store` e
+  `Vary: Authorization` per evitare il riutilizzo tra sessioni diverse.
   Eliminare un account revoca anche le sue sessioni.
+  La vecchia sezione di configurazione email per branca non è più presente
+  nel pannello: email e branche dei capi si gestiscono tramite gli account.
+  Il vecchio indirizzo `/admin/impostazioni` reindirizza a **Capi Unità**.
+  Le checkbox del pannello amministrativo hanno focus da tastiera e stati
+  selezionato/disabilitato distinguibili; in Capi Unità le branche sono
+  schede selezionabili e i campi account mantengono etichette e suggerimenti.
   Le denominazioni storiche Coccinelle, Lupetti, Rover e Capi sono riconosciute
   rispettivamente come Cerchio, Branco, Clan e RS.
 - Le migrazioni automatiche supportano SQLite e PostgreSQL. I vecchi
   articoli segnati come acquistati diventano Ordinati; gli altri Prenotati.
+  Lo stato Non pagato è rimosso: le righe preesistenti diventano Prenotate
+  senza pagamento registrato e le relative notifiche non inviate sono rimosse.
   Lo storico archiviato rimane consultabile, ma **Archivia tutto** è rimosso.
   Gli stati non archiviano automaticamente prenotazioni né modificano
   giacenze. L'azione preesistente **Da acquistare** mantiene la gestione

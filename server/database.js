@@ -77,6 +77,17 @@ async function initializeWorkflowSchema() {
       ultimo_errore TEXT
     );
   `);
+  await withTransaction(async connection => {
+    await connection.run(
+      "UPDATE dettagli_prenotazioni SET stato = 'prenotato', pagamento_registrato = 0 WHERE stato = 'non_pagato'"
+    );
+    const notifications = await connection.all("SELECT id, payload FROM notifiche_stato WHERE stato != 'sent'");
+    for (const notification of notifications) {
+      if (JSON.parse(notification.payload).stato === 'non_pagato') {
+        await connection.run('DELETE FROM notifiche_stato WHERE id = ?', [notification.id]);
+      }
+    }
+  });
 }
 
 export async function initializeDatabase({ filename = DB_PATH } = {}) {

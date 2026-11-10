@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import axios from 'axios'
 import { useAppDialog } from './AppDialog'
+import { BookingDetails } from './BookingManagement'
 import '../styles/components.css'
 
 const states = {
   prenotato: 'Prenotato', pagato: 'Pagato', non_disponibile: 'Non disponibile',
-  non_pagato: 'Non pagato', ordinato: 'Ordinato', ricevuto: 'Ricevuto'
+  ordinato: 'Ordinato', ricevuto: 'Ricevuto'
 }
 const money = value => `€ ${Number(value).toFixed(2)}`
 const date = value => new Date(value).toLocaleString('it-IT')
@@ -20,6 +21,7 @@ export default function ReservedItems({ user }) {
   const [filters, setFilters] = useState({ search: '', branca: '', stato: '', da: '', a: '' })
   const [archived, setArchived] = useState(false)
   const [details, setDetails] = useState(null)
+  const [editingBooking, setEditingBooking] = useState(null)
   const [targetState, setTargetState] = useState('prenotato')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -89,6 +91,10 @@ export default function ReservedItems({ user }) {
     : current.filter(id => !ids.includes(id)))
   const allIds = groups.filter(eligible).flatMap(idsFor)
   const allSelected = allIds.length > 0 && allIds.every(id => selected.includes(id))
+  const canDeleteSelected = selected.length > 0 && (isAdmin || selected.every(id => {
+    const group = groups.find(group => group.key === id)
+    return group && !group.items.some(paid)
+  }))
   const summary = items => Object.entries(states).map(([state, label]) => {
     const quantity = items.filter(item => item.stato === state).reduce((total, item) => total + Number(item.quantita), 0)
     return quantity ? `${label}: ${quantity}` : null
@@ -112,14 +118,50 @@ export default function ReservedItems({ user }) {
     }
   }
 
+  const deleteBooking = async group => {
+    if (!await showConfirm('Confermi eliminazione della prenotazione? Le quantità limitate verranno ripristinate.')) return
+    setBusy(true)
+    try {
+      await axios.delete(`/api/admin/prenotazioni/${group.key}`)
+      setDetails(null)
+      await load()
+    } catch (error) {
+      console.error('Errore eliminazione prenotazione:', error)
+      showMessage(error.response?.data?.error || 'Errore eliminazione prenotazione', 'Errore')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteSelected = async () => {
+    const count = selected.length
+    if (!await showConfirm(`Eliminare ${count} ${isAdmin ? 'righe articolo' : 'prenotazioni'} selezionate? L’operazione è irreversibile. Le giacenze degli articoli non acquistati verranno ripristinate.`, 'Elimina selezionati')) return
+    setBusy(true)
+    try {
+      const response = await axios.post('/api/admin/elimina-selezionati',
+        isAdmin ? { ids: selected } : { prenotazioneIds: selected })
+      setDetails(null)
+      await load()
+      showMessage(`${response.data.righeEliminate} righe articolo e ${response.data.prenotazioniEliminate} prenotazioni eliminate.`, 'Eliminazione completata')
+    } catch (error) {
+      console.error('Errore eliminazione selezionati:', error)
+      showMessage(error.response?.data?.error || 'Errore eliminazione selezionati', 'Errore')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="booking-management">
       <div className="management-header">
         <h3>{isAdmin ? 'Articoli prenotati per taglia' : 'Prenotazioni delle tue branche'}</h3>
         {isAdmin && <div className="header-controls">
-          <button className="btn-secondary" onClick={() => { setArchived(!archived); setDetails(null) }} disabled={busy}>
-            {archived ? 'Mostra attive' : 'Storico archiviate'}
-          </button>
+          <div className="booking-view-switch" role="group" aria-label="Vista prenotazioni">
+            <button type="button" className={`btn-small ${!archived ? 'btn-primary' : 'btn-secondary'}`}
+              aria-pressed={!archived} onClick={() => { setArchived(false); setDetails(null); setSelected([]) }} disabled={busy}>📄 Attive</button>
+            <button type="button" className={`btn-small ${archived ? 'btn-primary' : 'btn-secondary'}`}
+              aria-pressed={archived} onClick={() => { setArchived(true); setDetails(null); setSelected([]) }} disabled={busy}>📦 Archiviate</button>
+          </div>
           <Link className="btn-secondary" to="/admin/per-prenotazione">Gestisci per prenotazione</Link>
         </div>}
       </div>
@@ -127,6 +169,7 @@ export default function ReservedItems({ user }) {
         {notifications.errore || `Email in coda: ${notifications.inCoda}. Invii con errore: ${notifications.conErrore} (ritentati automaticamente).`}
       </p>}
       {!isAdmin && <p>Il pagamento riguarda tutta la prenotazione. Gli stati Ordinato, Ricevuto e Non disponibile vengono conservati.</p>}
+      {!isAdmin && <p>Puoi modificare o eliminare le prenotazioni interamente da pagare della tua branca.</p>}
       <div className="catalog-filters admin-filters">
         <div className="filter-row">
           <input type="search" aria-label="Cerca prenotazioni" placeholder={isAdmin ? 'Articolo, taglia, nome o email' : 'Nome o email'} value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
@@ -144,11 +187,15 @@ export default function ReservedItems({ user }) {
       </div>
       {!archived && <div className="header-controls">
         <span>{selected.length} {isAdmin ? 'righe articolo' : 'prenotazioni'} selezionate</span>
-        {isAdmin && <select aria-label="Nuovo stato" value={targetState} onChange={e => setTargetState(e.target.value)} disabled={busy}>
+        {isAdmin && <select className="status-select" aria-label="Nuovo stato" value={targetState} onChange={e => setTargetState(e.target.value)} disabled={busy}>
           {Object.entries(states).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>}
         <button className="btn-primary" disabled={!selected.length || busy || loading} onClick={apply}>
           {busy ? 'Aggiornamento...' : isAdmin ? 'Modifica stato selezionati' : 'Segna prenotazioni pagate'}
+        </button>
+        <button className="btn-small btn-delete" disabled={!canDeleteSelected || busy || loading} onClick={deleteSelected}
+          title={!isAdmin && selected.length && !canDeleteSelected ? 'Seleziona soltanto prenotazioni interamente da pagare' : undefined}>
+          Elimina selezionati
         </button>
       </div>}
       {error && <div className="error-message" role="alert">{error} <button onClick={load}>Riprova</button></div>}
@@ -157,7 +204,7 @@ export default function ReservedItems({ user }) {
           <thead><tr>
             {!archived && <th><input type="checkbox" aria-label="Seleziona tutti i risultati" checked={allSelected} disabled={busy || !allIds.length} onChange={e => toggle(allIds, e.target.checked)} /></th>}
             {isAdmin ? <><th>Articolo</th><th>Taglia</th><th>Quantità</th><th>Stati</th></> : <><th>Nome</th><th>Email</th><th>Branca</th><th>Data</th><th>Totale</th><th>Pagamento</th></>}
-            <th>Dettagli</th>
+            <th>{isAdmin ? 'Dettagli' : 'Azioni'}</th>
           </tr></thead>
           <tbody>{groups.map(group => <tr key={group.key}>
             {!archived && <td><input type="checkbox" aria-label={`Seleziona ${isAdmin ? group.nome : group.nome_prenotante}`} checked={selection(group)} disabled={busy || !eligible(group)} onChange={e => toggle(idsFor(group), e.target.checked)} /></td>}
@@ -171,28 +218,39 @@ export default function ReservedItems({ user }) {
               <td>{money(group.items.reduce((sum, item) => sum + item.quantita * item.prezzo_unitario, 0))}</td>
               <td>{group.items.every(paid) ? 'Pagato' : group.items.some(paid) ? 'Parzialmente pagato' : 'Da pagare'}</td>
             </>}
-            <td><button className="btn-small btn-view" onClick={() => setDetails(group.key)}>Dettagli</button></td>
+            <td>
+              <button className="btn-small btn-view" onClick={() => setDetails(group.key)}>Dettagli</button>
+              {!isAdmin && !group.items.some(paid) && <>
+                <button className="btn-small btn-edit" disabled={busy} onClick={() => setEditingBooking(group.key)}>Modifica</button>
+                <button className="btn-small btn-delete" disabled={busy} onClick={() => deleteBooking(group)}>Elimina</button>
+              </>}
+            </td>
           </tr>)}</tbody>
         </table>
         {!groups.length && <p>Nessuna prenotazione trovata.</p>}
       </div>}
       {detailGroup && <div className="modal-overlay" onClick={() => setDetails(null)}>
-        <div className="modal modal-large" role="dialog" aria-modal="true" aria-label="Dettagli prenotazioni" onClick={e => e.stopPropagation()}>
+        <div className="modal modal-large reserved-details-modal" role="dialog" aria-modal="true" aria-label="Dettagli prenotazioni" onClick={e => e.stopPropagation()}>
           <div className="modal-header"><h3>{isAdmin ? `${detailGroup.nome} — ${detailGroup.taglia || 'Taglia unica'}` : detailGroup.nome_prenotante}</h3>
             <button className="btn-close" aria-label="Chiudi dettagli" onClick={() => setDetails(null)}>×</button>
           </div>
           <div className="modal-content bookings-table"><table className="detail-table">
             <thead><tr>{isAdmin && !archived && <th>Seleziona</th>}<th>{isAdmin ? 'Nome' : 'Articolo'}</th>{isAdmin && <><th>Email</th><th>Branca</th><th>Data</th></>}<th>Quantità</th><th>Stato</th><th>Pagamento</th></tr></thead>
             <tbody>{detailGroup.items.map(item => <tr key={item.id}>
-              {isAdmin && !archived && <td><input type="checkbox" aria-label={`Seleziona ordine di ${item.nome_prenotante}`} checked={selected.includes(item.id)} disabled={busy} onChange={e => toggle([item.id], e.target.checked)} /></td>}
-              <td>{isAdmin ? item.nome_prenotante : `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}${item.specialita ? ` — ${item.specialita}` : ''}`}</td>
-              {isAdmin && <><td>{item.email_prenotante}</td><td>{item.branca_riferimento}</td><td>{date(item.data_prenotazione)}</td></>}
-              <td>{item.quantita}</td><td>{states[item.stato]}</td><td>{paid(item) ? 'Pagato' : 'Da pagare'}</td>
+              {isAdmin && !archived && <td data-label="Seleziona"><input type="checkbox" aria-label={`Seleziona ordine di ${item.nome_prenotante}`} checked={selected.includes(item.id)} disabled={busy} onChange={e => toggle([item.id], e.target.checked)} /></td>}
+              <td data-label={isAdmin ? 'Nome' : 'Articolo'}>{isAdmin ? item.nome_prenotante : `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}${item.specialita ? ` — ${item.specialita}` : ''}`}</td>
+              {isAdmin && <><td data-label="Email">{item.email_prenotante}</td><td data-label="Branca">{item.branca_riferimento}</td><td data-label="Data">{date(item.data_prenotazione)}</td></>}
+              <td data-label="Quantità">{item.quantita}</td><td data-label="Stato">{states[item.stato]}</td><td data-label="Pagamento">{paid(item) ? 'Pagato' : 'Da pagare'}</td>
             </tr>)}</tbody>
           </table></div>
-          {isAdmin && !archived && <button className="btn-primary" disabled={busy || !selected.length} onClick={apply}>Applica {states[targetState]} ai selezionati ({selected.length})</button>}
+          {isAdmin && !archived && <div className="reserved-details-footer">
+            <button className="btn-primary" disabled={busy || !selected.length} onClick={apply}>Applica {states[targetState]} ai selezionati ({selected.length})</button>
+            <button className="btn-small btn-delete" disabled={busy || !canDeleteSelected} onClick={deleteSelected}>Elimina selezionati ({selected.length})</button>
+          </div>}
         </div>
       </div>}
+      {editingBooking && <BookingDetails bookingId={editingBooking} user={user} startEditing
+        onClose={() => setEditingBooking(null)} onBookingUpdated={load} />}
       {dialogElement}
     </div>
   )

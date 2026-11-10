@@ -55,22 +55,35 @@ export default function LeaderAccounts() {
 
   return <div className="booking-management">
     <h3>Account Capi Unità</h3>
-    <form onSubmit={create} className="edit-booking-form">
-      <div className="form-group-grid">
-        <label>Nome<input required value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} autoComplete="name" /></label>
-        <label>Email<input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="off" /></label>
-        <label>Password (minimo 10 caratteri)<input type="password" required minLength={10} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" /></label>
+    <form onSubmit={create} className="edit-booking-form leader-account-form">
+      <div className="form-group-grid leader-account-fields">
+        <div className="form-group">
+          <label htmlFor="leader-name">Nome</label>
+          <input id="leader-name" required placeholder="Nome del capo unità" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} autoComplete="name" disabled={busy} />
+        </div>
+        <div className="form-group">
+          <label htmlFor="leader-email">Email</label>
+          <input id="leader-email" type="email" required placeholder="nome@esempio.it" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="off" disabled={busy} />
+        </div>
+        <div className="form-group">
+          <label htmlFor="leader-password">Password</label>
+          <input id="leader-password" type="password" required minLength={10} placeholder="Almeno 10 caratteri" aria-describedby="leader-password-help" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" disabled={busy} />
+          <small id="leader-password-help">Usa almeno 10 caratteri e comunica la password tramite un canale sicuro.</small>
+        </div>
       </div>
-      <fieldset><legend>Branche assegnate</legend>
-        {branches.map(branch => <label key={branch} style={{ display: 'block' }}>
-          <input type="checkbox" checked={form.branche.includes(branch)} onChange={e => setForm({ ...form,
-            branche: e.target.checked ? [...form.branche, branch] : form.branche.filter(value => value !== branch) })} /> {branch}
-        </label>)}
+      <fieldset className="leader-branches" disabled={busy}><legend>Branca assegnata</legend>
+        <p>Seleziona una sola branca di cui il capo può gestire i pagamenti.</p>
+        <div className="leader-branch-options">
+          {branches.map(branch => <label key={branch} className={`leader-branch-option${form.branche.includes(branch) ? ' is-selected' : ''}`}>
+            <input type="radio" name="leader-branch" value={branch} required checked={form.branche.includes(branch)} onChange={() => setForm({ ...form, branche: [branch] })} />
+            <span>{branch}</span>
+          </label>)}
+        </div>
       </fieldset>
-      <button className="btn-primary" disabled={busy || !form.branche.length}>Crea account</button>
+      <div className="form-actions"><button className="btn-primary" disabled={busy || form.branche.length !== 1}>{busy ? 'Operazione in corso...' : 'Crea account'}</button></div>
     </form>
     {error && <div className="error-message" role="alert">{error} <button onClick={load}>Riprova</button></div>}
-    <div className="bookings-table"><table><thead><tr><th>Nome</th><th>Email</th><th>Branche</th><th>Azioni</th></tr></thead>
+    <div className="bookings-table"><table><thead><tr><th>Nome</th><th>Email</th><th>Branca</th><th>Azioni</th></tr></thead>
       <tbody>{accounts.map(account => <tr key={account.id}>
         <td>{account.nome}</td><td>{account.email}</td><td>{account.branche.join(', ')}</td>
         <td><button className="btn-small btn-delete" disabled={busy} onClick={() => remove(account)}>Elimina account</button></td>

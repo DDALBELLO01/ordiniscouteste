@@ -6,7 +6,6 @@ import LoginForm from '../components/LoginForm'
 import ProductManagement from '../components/ProductManagement'
 import BookingManagement from '../components/BookingManagement'
 import ToBuyManagement from '../components/ToBuyManagement'
-import SettingsManagement from '../components/SettingsManagement'
 import ReservedItems from '../components/ReservedItems'
 import LeaderAccounts from '../components/LeaderAccounts'
 
@@ -30,10 +29,18 @@ export default function AdminPanel({ onLoggedIn }) {
 
   useEffect(() => {
     if (!isLoggedIn || user) return
-    axios.get('/api/admin/me').then(response => setUser(response.data)).catch(error => {
+    let active = true
+    axios.get('/api/admin/me', { params: { sessionCheck: Date.now() } }).then(response => {
+      if (!['admin', 'capo_unita'].includes(response.data?.ruolo)) {
+        throw new Error('Ruolo della sessione non valido')
+      }
+      if (active) setUser(response.data)
+    }).catch(error => {
+      if (!active) return
       console.error('Errore verifica sessione:', error)
       setError(error.response?.data?.error || 'Impossibile verificare la sessione. Ricarica la pagina.')
     })
+    return () => { active = false }
   }, [isLoggedIn, user])
 
   const handleLogin = (token, account) => {
@@ -76,12 +83,6 @@ export default function AdminPanel({ onLoggedIn }) {
         >
           🛒 Da Acquistare
         </button>}
-        {isAdmin && <button
-          className={`tab-btn ${activeTab === 'impostazioni' ? 'active' : ''}`}
-          onClick={() => navigate('/admin/impostazioni')}
-        >
-          ⚙️ Impostazioni
-        </button>}
         {isAdmin && <button className={`tab-btn ${activeTab === 'capi-unita' ? 'active' : ''}`} onClick={() => navigate('/admin/capi-unita')}>
           Capi Unità
         </button>}
@@ -95,7 +96,7 @@ export default function AdminPanel({ onLoggedIn }) {
             <Route path="prodotti" element={<ProductManagement />} />
             <Route path="per-prenotazione" element={<BookingManagement />} />
             <Route path="da-acquistare" element={<ToBuyManagement />} />
-            <Route path="impostazioni" element={<SettingsManagement />} />
+            <Route path="impostazioni" element={<Navigate to="/admin/capi-unita" replace />} />
             <Route path="capi-unita" element={<LeaderAccounts />} />
           </>}
           <Route path="*" element={<Navigate to="prenotazioni" replace />} />

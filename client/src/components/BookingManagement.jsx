@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
+import { Link } from 'react-router-dom'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
@@ -8,6 +9,9 @@ export default function BookingManagement() {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedBooking, setSelectedBooking] = useState(null)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [archiving, setArchiving] = useState(false)
+  const [error, setError] = useState('')
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [viewMode, setViewMode] = useState('attive') // 'attive' | 'archiviate'
@@ -41,14 +45,20 @@ export default function BookingManagement() {
     checkBookingsStatus()
   }, [viewMode])
 
+  useEffect(() => { setSelectedIds([]) }, [filters, viewMode])
+
   const fetchBookings = async (mode = viewMode) => {
+    setLoading(true)
+    setError('')
     try {
       const archiviate = mode === 'archiviate' ? 'true' : 'false'
       const response = await axios.get(`/api/admin/prenotazioni?archiviate=${archiviate}`)
       setBookings(response.data)
-      setLoading(false)
+      setSelectedIds([])
     } catch (error) {
       console.error('Errore caricamento:', error)
+      setError(error.response?.data?.error || 'Impossibile caricare le prenotazioni')
+    } finally {
       setLoading(false)
     }
   }
@@ -109,6 +119,26 @@ export default function BookingManagement() {
       (!filters.dataA || bookingDate <= filters.dataA)
   }), [bookings, filters])
 
+  const toggleSelection = (ids, checked) => setSelectedIds(current => checked
+    ? [...new Set([...current, ...ids])] : current.filter(id => !ids.includes(id)))
+  const visibleIds = filteredBookings.map(booking => booking.id)
+  const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id))
+  const handleArchiveSelected = async () => {
+    if (!selectedIds.length || !await showConfirm(`Archiviare ${selectedIds.length} prenotazioni selezionate? Saranno spostate nello storico senza modificare articoli, pagamenti o giacenze.`, 'Archivia prenotazioni')) return
+    setArchiving(true)
+    try {
+      const response = await axios.post('/api/admin/prenotazioni/archivia-selezionate', { prenotazioneIds: selectedIds })
+      setSelectedBooking(null)
+      await fetchBookings()
+      showMessage(`${response.data.archiviate} prenotazioni archiviate.`, 'Archiviazione completata')
+    } catch (error) {
+      console.error('Errore archiviazione prenotazioni:', error)
+      showMessage(error.response?.data?.error || 'Errore archiviazione prenotazioni', 'Errore')
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   const sortedBookings = [...filteredBookings].sort((a, b) => {
     let valA = a[sortConfig.field]
     let valB = b[sortConfig.field]
@@ -139,11 +169,13 @@ export default function BookingManagement() {
       <div className="management-header">
         <h3>Gestione Prenotazioni ({filteredBookings.length}{filteredBookings.length !== bookings.length ? ` di ${bookings.length}` : ''})</h3>
         <div className="header-controls">
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div className="booking-view-switch" role="group" aria-label="Vista prenotazioni">
             <button
               type="button"
               className={`btn-small ${viewMode === 'attive' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setViewMode('attive')}
+              aria-pressed={viewMode === 'attive'}
+              disabled={archiving}
             >
               📄 Attive
             </button>
@@ -151,10 +183,13 @@ export default function BookingManagement() {
               type="button"
               className={`btn-small ${viewMode === 'archiviate' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setViewMode('archiviate')}
+              aria-pressed={viewMode === 'archiviate'}
+              disabled={archiving}
             >
               📦 Archiviate
             </button>
           </div>
+          <Link className="btn-secondary" to="/admin/prenotazioni">Gestisci per taglia</Link>
           <button 
             className={`btn-toggle ${bookingsEnabled ? 'enabled' : 'disabled'}`}
             onClick={handleToggleBookings}
@@ -201,10 +236,20 @@ export default function BookingManagement() {
         </div>
       )}
 
-      <div className="bookings-table">
+      {viewMode === 'attive' && <div className="header-controls booking-selection-actions">
+        <span>{selectedIds.length} prenotazioni selezionate</span>
+        <button type="button" className="btn-primary" disabled={!selectedIds.length || archiving || loading || !!error} onClick={handleArchiveSelected}>
+          {archiving ? 'Archiviazione...' : 'Archivia selezionate'}
+        </button>
+      </div>}
+      {error && <div className="error-message" role="alert">{error} <button onClick={() => fetchBookings()}>Riprova</button></div>}
+      {!error && <div className="bookings-table">
         <table>
           <thead>
             <tr>
+              {viewMode === 'attive' && <th><input type="checkbox" aria-label="Seleziona tutte le prenotazioni visualizzate"
+                checked={allSelected} disabled={archiving || !visibleIds.length}
+                onChange={e => toggleSelection(visibleIds, e.target.checked)} /></th>}
               <th className="sortable-th" onClick={() => handleSort('nome_prenotante')}>Nome{renderSortIndicator('nome_prenotante')}</th>
               <th className="sortable-th" onClick={() => handleSort('email_prenotante')}>Email{renderSortIndicator('email_prenotante')}</th>
               <th className="sortable-th" onClick={() => handleSort('branca_riferimento')}>Branca{renderSortIndicator('branca_riferimento')}</th>
@@ -217,6 +262,9 @@ export default function BookingManagement() {
           <tbody>
             {sortedBookings.map(booking => (
               <tr key={booking.id}>
+                {viewMode === 'attive' && <td><input type="checkbox" aria-label={`Seleziona prenotazione di ${booking.nome_prenotante}`}
+                  checked={selectedIds.includes(booking.id)} disabled={archiving}
+                  onChange={e => toggleSelection([booking.id], e.target.checked)} /></td>}
                 <td>{booking.nome_prenotante}</td>
                 <td>{booking.email_prenotante}</td>
                 <td>{booking.branca_riferimento || '-'}</td>
@@ -227,6 +275,7 @@ export default function BookingManagement() {
                   <button 
                     className="btn-small btn-view"
                     onClick={() => setSelectedBooking(booking.id)}
+                    disabled={archiving}
                   >
                     👁️ Dettagli
                   </button>
@@ -234,6 +283,7 @@ export default function BookingManagement() {
                     type="button"
                     className="btn-small btn-delete"
                     onClick={() => handleDelete(booking.id)}
+                    disabled={archiving}
                   >
                     🗑️ Elimina
                   </button>
@@ -242,7 +292,7 @@ export default function BookingManagement() {
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       {selectedBooking && (
         <BookingDetails 
@@ -257,12 +307,14 @@ export default function BookingManagement() {
   )
 }
 
-function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
+export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, startEditing = false }) {
   const { showMessage, dialogElement } = useAppDialog()
   const [booking, setBooking] = useState(null)
   const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isEditing, setIsEditing] = useState(startEditing)
+  const [error, setError] = useState('')
+  const isLeader = user?.ruolo === 'capo_unita'
   const [editForm, setEditForm] = useState({
     nome_prenotante: '',
     email_prenotante: '',
@@ -300,6 +352,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
       setLoading(false)
     } catch (error) {
       console.error('Errore:', error)
+      setError(error.response?.data?.error || 'Impossibile caricare la prenotazione')
       setLoading(false)
     }
   }
@@ -310,6 +363,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
       setAllProducts(response.data)
     } catch (error) {
       console.error('Errore prodotti:', error)
+      showMessage('Impossibile caricare il catalogo prodotti', 'Errore')
     }
   }
 
@@ -356,6 +410,10 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
   }
 
   const handleSaveBooking = async () => {
+    if (isLeader && !editForm.items.length) {
+      showMessage('La prenotazione deve contenere almeno un articolo', 'Errore')
+      return
+    }
     const email = editForm.email_prenotante.trim()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showMessage('Inserisci un indirizzo email valido', 'Email non valida')
@@ -374,6 +432,7 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
   }
 
   if (loading) return <div className="modal-overlay"><div className="modal">Caricamento...</div></div>
+  if (error) return <div className="modal-overlay"><div className="modal" role="alert">{error} <button onClick={onClose}>Chiudi</button></div></div>
   if (!booking) return null
 
   const currentItems = isEditing ? editForm.items : booking.items
@@ -461,9 +520,10 @@ function BookingDetails({ bookingId, onClose, onBookingUpdated }) {
                   <label>Branca di riferimento:</label>
                   <select
                     value={editForm.branca_riferimento}
+                    disabled={isLeader}
                     onChange={(e) => setEditForm({ ...editForm, branca_riferimento: e.target.value })}
                   >
-                    {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                    {(isLeader ? [editForm.branca_riferimento] : branches).map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
               </div>
