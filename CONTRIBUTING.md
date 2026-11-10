@@ -62,6 +62,21 @@ Per suggerire una feature:
 
 ### 🧪 Testing
 
+#### Prezzi degli articoli
+
+- La testata articolo gestisce **Prezzo di vendita** e **Costo di acquisto**,
+  applicabili alle varianti tramite **Modifica testata**. Il vecchio campo
+  `prezzo` viene migrato automaticamente nei due nuovi campi e poi rimosso,
+  sia su SQLite sia su PostgreSQL. I successivi avvii non sovrascrivono i valori.
+- Catalogo pubblico, carrello, prenotazioni e importi da riscuotere usano il
+  prezzo di vendita. Le righe di prenotazione conservano il prezzo concordato
+  in `prezzo_unitario`; modificarne la testata non cambia gli ordini esistenti.
+  La sezione **Da acquistare** mostra il costo di acquisto.
+- Il catalogo completo usa l'API autenticata `/api/admin/prodotti`; soltanto
+  l'admin riceve anche il costo di acquisto. L'API pubblica non espone costi.
+  Campi e sincronizzazione Scouting sono rimossi, senza eliminare articoli,
+  immagini o guide taglie.
+
 #### Prenotazioni e accesso capi unità
 
 - L'admin vede gli articoli raggruppati per nome, taglia, specialità e
@@ -93,6 +108,15 @@ Per suggerire una feature:
 - Passare a Ricevuto o Non disponibile crea una notifica per
   prenotazione, con i soli articoli modificati. Reimpostare lo stesso stato
   non crea un'altra email; uscire da quello stato e tornarci sì.
+- Passare a **Ordinato**, anche da **Da acquistare**, accoda una mail per
+  branca a ogni capo unità corrispondente. Ogni operazione include soltanto
+  le righe appena modificate, raggruppate per articolo/taglia/specialità e
+  importi uguali. La mail separa il totale costo di acquisto (dalla testata
+  al momento dell'ordine) dal totale vendita da chiedere ai clienti (dalle
+  righe prenotate), entrambi moltiplicati per le quantità. I valori vengono
+  salvati nella notifica: modificare i prezzi non cambia i successivi retry.
+  Reimpostare Ordinato non invia duplicati; tornare a Ordinato dopo un altro
+  stato crea una nuova notifica. Non vengono notificati ordini preesistenti.
 - Le notifiche sono salvate nel database insieme al cambio stato. Il server
   controlla la coda ogni 10 secondi e ritenta gli errori SMTP con attese
   crescenti fino a un'ora. L'admin vede i conteggi di email in coda e in errore.

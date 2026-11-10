@@ -13,7 +13,7 @@ const sqlitePath = path.join(__dirname, 'database', 'ordini.db');
 const { Pool } = pg;
 
 const tables = {
-  prodotti: ['id', 'nome', 'tipologia', 'branca', 'taglia', 'specialita', 'immagine', 'quantita_magazzino', 'prezzo', 'usato', 'mostra_home', 'created_at', 'updated_at'],
+  prodotti: ['id', 'nome', 'tipologia', 'branca', 'taglia', 'specialita', 'immagine', 'guida_taglie_url', 'quantita_magazzino', 'prezzo_vendita', 'costo_acquisto', 'usato', 'mostra_home', 'created_at', 'updated_at'],
   prenotazioni: ['id', 'nome_prenotante', 'email_prenotante', 'branca_riferimento', 'data_prenotazione', 'stato', 'note', 'archiviata', 'data_archiviazione', 'metodo_pagamento', 'created_at', 'updated_at'],
   dettagli_prenotazioni: ['id', 'prenotazione_id', 'prodotto_id', 'quantita', 'prezzo_unitario', 'specialita', 'acquistato', 'stato', 'pagamento_registrato'],
   configurazione: ['chiave', 'valore', 'updated_at'],
@@ -30,8 +30,6 @@ async function migrate() {
   await initializeDatabase();
 
   const sqlite = await open({ filename: sqlitePath, driver: sqlite3.Database });
-  const tableInfo = await sqlite.all("PRAGMA table_info('prodotti')");
-  const sqliteColumns = tableInfo.map(c => c.name);
 
   const pool = new Pool({
     host: process.env.DB_HOST,
@@ -48,11 +46,13 @@ async function migrate() {
     for (const [table, columns] of Object.entries(tables)) {
       const info = await sqlite.all(`PRAGMA table_info('${table}')`);
       const tableSqliteCols = info.map(c => c.name);
-      const validColumns = columns.filter(col => tableSqliteCols.includes(col));
+      const validColumns = columns.filter(col => tableSqliteCols.includes(col) ||
+        table === 'prodotti' && ['prezzo_vendita', 'costo_acquisto'].includes(col) && tableSqliteCols.includes('prezzo'));
 
       if (validColumns.length === 0) continue;
 
-      const rows = await sqlite.all(`SELECT ${validColumns.join(', ')} FROM ${table}`);
+      const selectColumns = validColumns.map(column => tableSqliteCols.includes(column) ? column : `prezzo AS ${column}`);
+      const rows = await sqlite.all(`SELECT ${selectColumns.join(', ')} FROM ${table}`);
       for (const row of rows) {
         const placeholders = validColumns.map((_, index) => `$${index + 1}`).join(', ');
         await client.query(

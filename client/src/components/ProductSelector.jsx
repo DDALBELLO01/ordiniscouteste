@@ -162,7 +162,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const groupedProducts = useMemo(() => {
     const groups = new Map()
     filteredProducts.forEach(product => {
-      const key = [product.nome, product.tipologia, product.branca, product.prezzo, product.immagine || '', product.usato].join('|')
+      const key = [product.nome, product.tipologia, product.branca, product.prezzo_vendita, product.immagine || '', product.usato].join('|')
       if (!groups.has(key)) groups.set(key, { ...product, items: [] })
       groups.get(key).items.push(product)
     })
@@ -280,8 +280,8 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
             }} aria-label="Ordina catalogo">
               <option value="nome-asc">Ordina per: Nome (A-Z)</option>
               <option value="nome-desc">Ordina per: Nome (Z-A)</option>
-              <option value="prezzo-asc">Ordina per: Prezzo (Crescente)</option>
-              <option value="prezzo-desc">Ordina per: Prezzo (Decrescente)</option>
+              <option value="prezzo_vendita-asc">Ordina per: Prezzo (Crescente)</option>
+              <option value="prezzo_vendita-desc">Ordina per: Prezzo (Decrescente)</option>
               <option value="branca-asc">Ordina per: Branca (A-Z)</option>
               <option value="tipologia-asc">Ordina per: Tipologia (A-Z)</option>
               <option value="disponibilita-desc">Ordina per: Disponibilità</option>
@@ -348,7 +348,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
                 )}
               </div>
               <div className="product-order">
-                <p className="product-price">€ {product.prezzo.toFixed(2)}</p>
+                <p className="product-price">€ {Number(product.prezzo_vendita).toFixed(2)}</p>
                 {available ? (
                   <div className="product-footer">
                     <input type="number" min="1" max={isUsato ? (product.quantita_magazzino || undefined) : undefined} value={quantities[product.id] || 1} onChange={(e) => handleQuantityChange(product.id, e.target.value)} className="qty-input" aria-label={`Quantità ${product.nome}`} />

@@ -110,7 +110,7 @@ export default function ToBuyManagement() {
             <tr>
               <th><input type="checkbox" checked={sortedItems.length > 0 && selectedIds.length === sortedItems.length} onChange={toggleAll} aria-label="Seleziona tutti gli articoli" /></th>
               <th>Nome Articolo</th><th>Tipologia</th><th>Branca</th><th>Taglia</th>
-              <th>Prezzo</th><th>Giacenza Attuale</th><th>Richieste Attive</th><th>Guida taglie</th><th>Stato</th>
+              <th>Costo di acquisto</th><th>Giacenza Attuale</th><th>Richieste Attive</th><th>Guida taglie</th><th>Stato</th>
             </tr>
           </thead>
           <tbody>
@@ -121,7 +121,7 @@ export default function ToBuyManagement() {
                 <td>{product.tipologia}</td>
                 <td>{product.branca}</td>
                 <td>{product.taglia || 'Taglia unica'}</td>
-                <td>€ {Number(product.prezzo || 0).toFixed(2)}</td>
+                <td>€ {Number(product.costo_acquisto).toFixed(2)}</td>
                 <td>{product.quantita_magazzino ?? 0}</td>
                 <td>{product.quantita_prenotata || 0}</td>
                 <td>

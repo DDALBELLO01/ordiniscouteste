@@ -166,7 +166,8 @@ async function seedDatabase() {
         taglia TEXT,
         specialita TEXT,
         quantita_magazzino INTEGER,
-        prezzo REAL NOT NULL,
+        prezzo_vendita REAL NOT NULL,
+        costo_acquisto REAL NOT NULL,
         usato INTEGER DEFAULT 0,
         mostra_home INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -214,9 +215,9 @@ async function seedDatabase() {
     
     for (const p of productos) {
       await db.run(
-        `INSERT INTO prodotti (nome, tipologia, branca, taglia, quantita_magazzino, prezzo, usato) 
-         VALUES (?, ?, ?, ?, NULL, ?, 0)`,
-        [p.nome, p.tipologia, p.branca, p.taglia, p.prezzo]
+        `INSERT INTO prodotti (nome, tipologia, branca, taglia, quantita_magazzino, prezzo_vendita, costo_acquisto, usato)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, 0)`,
+        [p.nome, p.tipologia, p.branca, p.taglia, p.prezzo, p.prezzo]
       );
     }
     

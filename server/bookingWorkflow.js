@@ -1,7 +1,7 @@
 import { randomBytes, createHash, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getDatabase, withTransaction } from './database.js';
-import { sendBookingStatusEmail, sendLeaderBookingEmail } from './emailService.js';
+import { sendBookingStatusEmail, sendLeaderBookingEmail, sendOrderedItemsEmail } from './emailService.js';
 
 const scrypt = promisify(scryptCallback);
 export const BOOKING_STATES = ['prenotato', 'pagato', 'non_disponibile', 'ordinato', 'ricevuto'];
@@ -127,7 +127,7 @@ export async function updateItemStates(user, ids, state) {
         ORDER BY id FOR UPDATE`, uniqueIds);
     }
     const rows = await db.all(`
-      SELECT dp.*, p.nome, p.taglia, pr.nome_prenotante, pr.email_prenotante,
+      SELECT dp.*, p.nome, p.taglia, p.costo_acquisto, pr.nome_prenotante, pr.email_prenotante,
         pr.branca_riferimento, pr.archiviata
       FROM dettagli_prenotazioni dp
       JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
@@ -161,11 +161,39 @@ export async function updateItemStates(user, ids, state) {
         ]);
       }
     }
-    return { aggiornati: changed.length, emailInCoda: notifiedStates.has(state) ? bookings.size : 0 };
+    const orderedEmails = state === 'ordinato' ? await queueOrderedNotifications(db, changed) : 0;
+    return { aggiornati: changed.length, emailInCoda: notifiedStates.has(state) ? bookings.size : orderedEmails };
   });
 }
 
-export async function queueLeaderBookingNotifications(db, booking) {
+export async function queueOrderedNotifications(db, rows) {
+  const branches = new Map();
+  for (const row of rows) {
+    const branch = normalizeBranch(row.branca_riferimento);
+    if (!branches.has(branch)) {
+      branches.set(branch, {
+        branca_riferimento: BRANCHES.find(value => normalizeBranch(value) === branch) || row.branca_riferimento,
+        items: []
+      });
+    }
+    const items = branches.get(branch).items;
+    const existing = items.find(item => item.prodotto_id === row.prodotto_id &&
+      item.specialita === row.specialita && Number(item.prezzo_unitario) === Number(row.prezzo_unitario) &&
+      Number(item.costo_acquisto) === Number(row.costo_acquisto));
+    if (existing) existing.quantita += Number(row.quantita);
+    else items.push({
+      prodotto_id: row.prodotto_id, nome: row.nome, taglia: row.taglia, specialita: row.specialita,
+      quantita: Number(row.quantita), prezzo_unitario: row.prezzo_unitario, costo_acquisto: row.costo_acquisto
+    });
+  }
+  let queued = 0;
+  for (const booking of branches.values()) {
+    queued += await queueLeaderBookingNotifications(db, booking, 'articoli_ordinati');
+  }
+  return queued;
+}
+
+export async function queueLeaderBookingNotifications(db, booking, type = 'nuova_prenotazione') {
   const accounts = await db.all("SELECT email, branche FROM admin_users WHERE ruolo = 'capo_unita'");
   const recipients = [...new Set(accounts.filter(account => {
     const branches = JSON.parse(account.branche);
@@ -178,7 +206,7 @@ export async function queueLeaderBookingNotifications(db, booking) {
   for (const recipient of recipients) {
     await db.run('INSERT INTO notifiche_stato (id, payload) VALUES (?, ?)', [
       randomBytes(16).toString('hex'),
-      JSON.stringify({ ...booking, tipo: 'nuova_prenotazione', destinatario: recipient })
+      JSON.stringify({ ...booking, tipo: type, destinatario: recipient })
     ]);
   }
   return recipients.length;
@@ -186,7 +214,8 @@ export async function queueLeaderBookingNotifications(db, booking) {
 
 let delivering = false;
 export async function deliverStatusNotifications(send = booking => booking.tipo === 'nuova_prenotazione'
-  ? sendLeaderBookingEmail(booking) : sendBookingStatusEmail(booking)) {
+  ? sendLeaderBookingEmail(booking)
+  : booking.tipo === 'articoli_ordinati' ? sendOrderedItemsEmail(booking) : sendBookingStatusEmail(booking)) {
   if (delivering) return;
   delivering = true;
   try {
@@ -324,6 +353,7 @@ export function registerBookingWorkflow(app) {
   }));
 
   app.use('/api/admin', (req, res, next) => {
+    if (req.path === '/prodotti' && req.method === 'GET') return next();
     if (req.user.ruolo === 'capo_unita' && /^\/prenotazioni\/[^/]+$/.test(req.path) &&
         ['GET', 'PUT', 'DELETE'].includes(req.method)) return next();
     if (req.user.ruolo !== 'admin') return res.status(403).json({ error: 'Operazione riservata all’admin' });

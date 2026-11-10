@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { initializeDatabase, getDatabase, closeDatabase, withTransaction } from '../database.js';
 import { app } from '../server.js';
 import { BOOKING_STATES, updateItemStates, deliverStatusNotifications, queueLeaderBookingNotifications } from '../bookingWorkflow.js';
-import { buildBookingStatusMessage, buildLeaderBookingMessage } from '../emailService.js';
+import { buildBookingStatusMessage, buildLeaderBookingMessage, buildOrderedItemsMessage } from '../emailService.js';
 
 let directory, server, base, adminToken, leaderToken, db;
 const admin = { ruolo: 'admin', branche: [] };
@@ -29,12 +29,12 @@ before(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'booking-workflow-'));
   await initializeDatabase({ filename: path.join(directory, 'test.db') });
   db = getDatabase();
-  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo, quantita_magazzino) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [1, 'Camicia', 'Uniforme', 'Lupetti', 'M', 25, 100]);
-  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo) VALUES (?, ?, ?, ?, ?, ?)',
-    [2, 'Camicia', 'Uniforme', 'Lupetti', 'L', 25]);
-  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo) VALUES (?, ?, ?, ?, ?, ?)',
-    [3, 'Camicia', 'Uniforme', 'Rover', 'M', 25]);
+  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo_vendita, costo_acquisto, quantita_magazzino) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [1, 'Camicia', 'Uniforme', 'Lupetti', 'M', 25, 12, 100]);
+  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo_vendita, costo_acquisto) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [2, 'Camicia', 'Uniforme', 'Lupetti', 'L', 25, 15]);
+  await db.run('INSERT INTO prodotti (id, nome, tipologia, branca, taglia, prezzo_vendita, costo_acquisto) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [3, 'Camicia', 'Uniforme', 'Rover', 'M', 25, 10]);
   for (const [id, branch, archived] of [['a', 'Branco', 0], ['b', 'Branco', 0], ['c', 'Clan', 0], ['d', 'Branco', 1]]) {
     await db.run('INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, archiviata) VALUES (?, ?, ?, ?, ?)',
       [id, `Persona ${id}`, `${id}@example.test`, branch, archived]);
@@ -135,11 +135,11 @@ test('bulk states are atomic, valid and scoped; only real transitions enqueue em
   for (const state of BOOKING_STATES) {
     const result = await updateItemStates(admin, [1, 2, 3], state);
     const shouldNotify = ['ricevuto', 'non_disponibile'].includes(state);
-    assert.equal(result.emailInCoda, shouldNotify ? 2 : 0);
+    assert.equal(result.emailInCoda, shouldNotify ? 2 : state === 'ordinato' ? 1 : 0);
     assert.equal((await updateItemStates(admin, [1, 2, 3], state)).aggiornati, 0);
   }
   const messages = await db.all('SELECT * FROM notifiche_stato');
-  assert.equal(messages.length, 4);
+  assert.equal(messages.length, 5);
   const payload = messages.map(item => JSON.parse(item.payload)).find(item => item.id === 'a');
   assert.equal(payload.items.length, 2);
 });
@@ -262,10 +262,15 @@ test('email content is state-specific and escaped, and delivery errors persist f
   assert.throws(() => buildBookingStatusMessage({ stato: 'non_pagato' }), /Stato email non valido/);
   for (const state of ['ricevuto', 'non_disponibile']) {
     const message = buildBookingStatusMessage({ id: 'a', nome_prenotante: '<script>', email_prenotante: 'a@example.test',
-      stato: state, items: [{ nome: '<Camicia>', taglia: 'M', quantita: 2 }] });
+      stato: state, items: [{ nome: '<Camicia>', taglia: 'M', specialita: '<Patch>', quantita: 2 }] });
     assert.equal(message.to, 'a@example.test');
-    assert.match(message.text, /<Camicia> \(M\): 2/);
+    assert.match(message.text, /<Camicia> \(M\) - <Patch>: 2/);
     assert.match(message.html, /&lt;Camicia&gt;/);
+    assert.match(message.html, /&lt;Patch&gt;/);
+    assert.match(message.html, /ORDINI SCOUT · PRENOTAZIONI/);
+    assert.match(message.html, /<table role="presentation" width="100%"/);
+    assert.match(message.html, state === 'ricevuto' ? /ARTICOLI RICEVUTI/ : /NON DISPONIBILI/);
+    assert.match(message.html, /&lt;script&gt;/);
     assert.ok(!message.html.includes('<script>'));
     assert.ok(message.subject.length);
   }
@@ -378,10 +383,28 @@ test('legacy buying action records Ordered and respects unavailable items', asyn
   const list = await request('/api/admin/da-acquistare?soloRichiesti=true');
   assert.equal(list.status, 200);
   assert.equal(list.data.some(item => item.id === 2), false);
+  const before = new Set((await db.all('SELECT id FROM notifiche_stato')).map(row => row.id));
+  const expected = await db.get(`SELECT SUM(dp.quantita * p.costo_acquisto) AS acquisto,
+    SUM(dp.quantita * dp.prezzo_unitario) AS vendita
+    FROM dettagli_prenotazioni dp JOIN prodotti p ON p.id = dp.prodotto_id
+    JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
+    WHERE p.id IN (1, 2) AND dp.stato IN ('prenotato', 'pagato')
+      AND COALESCE(dp.acquistato, 0) = 0 AND COALESCE(pr.archiviata, 0) = 0`);
   const result = await request('/api/admin/da-acquistare/acquista', { method: 'POST', body: { productIds: [1, 2] } });
   assert.equal(result.status, 200);
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ordinato');
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 2')).stato, 'non_disponibile');
+  const notifications = (await db.all('SELECT * FROM notifiche_stato')).filter(row => !before.has(row.id));
+  assert.equal(result.data.emailInCoda, 1);
+  assert.equal(notifications.length, 1);
+  const payload = JSON.parse(notifications[0].payload);
+  assert.equal(payload.tipo, 'articoli_ordinati');
+  const message = buildOrderedItemsMessage(payload);
+  assert.ok(message.text.includes(`Totale costo di acquisto: € ${Number(expected.acquisto).toFixed(2)}`));
+  assert.ok(message.text.includes(`Totale vendita da chiedere ai clienti: € ${Number(expected.vendita).toFixed(2)}`));
+  assert.equal((await request('/api/admin/da-acquistare/acquista', {
+    method: 'POST', body: { productIds: [1, 2] }
+  })).data.emailInCoda, 0);
 });
 
 test('bulk deletion is atomic, scoped, restores stock and removes only selected admin lines', async () => {
@@ -485,6 +508,137 @@ test('selected booking archival is admin-only, atomic and preserves items, stock
   }
 });
 
+test('separate product prices are validated and purchase costs stay out of public and leader catalogs', async () => {
+  const publicProducts = await request('/api/prodotti?admin=true', { token: null });
+  assert.equal(publicProducts.status, 200);
+  assert.ok(publicProducts.data.every(product => !('costo_acquisto' in product) && !('prezzo' in product)));
+  assert.equal(publicProducts.data.find(product => product.id === 1).prezzo_vendita, 25);
+  assert.equal((await request('/api/admin/prodotti', { token: null })).status, 401);
+  const leaderProducts = await request('/api/admin/prodotti', { token: leaderToken });
+  assert.equal(leaderProducts.status, 200);
+  assert.ok(leaderProducts.data.every(product => !('costo_acquisto' in product)));
+  assert.equal((await request('/api/admin/prodotti')).data.find(product => product.id === 1).costo_acquisto, 12);
+  if (db.pool) {
+    await db.get("SELECT setval(pg_get_serial_sequence('prodotti', 'id'), (SELECT MAX(id) FROM prodotti))");
+  }
+  const product = { nome: 'Test prezzi', tipologia: 'Test', branca: ['Lupetti'],
+    taglia: 'S', prezzo_vendita: 32, costo_acquisto: 11, mostra_home: false };
+  for (const invalid of [-1, null, '', 'not-a-price', true]) {
+    for (const field of ['prezzo_vendita', 'costo_acquisto']) {
+      assert.equal((await request('/api/admin/prodotti', {
+        method: 'POST', body: { ...product, [field]: invalid }
+      })).status, 400);
+    }
+  }
+  const created = await request('/api/admin/prodotti', { method: 'POST', body: product });
+  assert.equal(created.status, 201);
+  const productId = created.data.id;
+  assert.ok(!(await request('/api/prodotti?admin=true')).data.some(item => item.id === productId));
+  assert.ok((await request('/api/admin/prodotti', { token: leaderToken })).data.some(item => item.id === productId));
+  assert.equal((await request(`/api/admin/prodotti/${productId}`, {
+    method: 'PUT', body: { ...product, prezzo_vendita: 35, costo_acquisto: 9 }
+  })).status, 200);
+  assert.equal((await db.get('SELECT costo_acquisto FROM prodotti WHERE id = ?', [productId])).costo_acquisto, 9);
+  const booking = await request('/api/prenotazioni', { method: 'POST', token: null, body: {
+    nome_prenotante: 'Test prezzi', email_prenotante: 'prices@example.test', branca_riferimento: 'Branco',
+    items: [{ prodotto_id: productId, quantita: 2, prezzo: 1, prezzo_unitario: 1 }]
+  } });
+  assert.equal(booking.status, 201);
+  const line = await db.get('SELECT * FROM dettagli_prenotazioni WHERE prenotazione_id = ?', [booking.data.id]);
+  assert.equal(line.prezzo_unitario, 35);
+  assert.equal((await request(`/api/admin/prodotti/${productId}`, {
+    method: 'PUT', body: { ...product, prezzo_vendita: 40, costo_acquisto: 0 }
+  })).status, 200);
+  assert.equal((await db.get('SELECT prezzo_unitario FROM dettagli_prenotazioni WHERE id = ?', [line.id])).prezzo_unitario, 35);
+  const toBuy = await request('/api/admin/da-acquistare?soloRichiesti=true');
+  assert.equal(toBuy.data.find(item => item.id === productId).costo_acquisto, 0);
+  assert.equal((await request(`/api/admin/prenotazioni/${booking.data.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await request(`/api/admin/prodotti/${productId}`, { method: 'DELETE' })).status, 200);
+});
+
+test('ordered summaries group each operation by branch, preserve both totals, retry and avoid duplicate transitions', async () => {
+  for (const [email, branches] of [
+    ['ordered-second@example.test', ['Branco']],
+    ['ordered-clan@example.test', ['Clan']],
+    ['ordered-invalid@example.test', ['Branco', 'Clan']]
+  ]) {
+    await db.run('INSERT INTO admin_users (nome, email, password_hash, ruolo, branche) VALUES (?, ?, ?, ?, ?)',
+      ['Ordered test', email, 'unused', 'capo_unita', JSON.stringify(branches)]);
+  }
+  const ids = [];
+  for (const [id, branch, items] of [
+    ['ordered-first', 'Lupetti', [[1, 2], [2, 1]]],
+    ['ordered-second', 'Branco', [[1, 3]]],
+    ['ordered-clan', 'Clan', [[3, 1]]]
+  ]) {
+    await db.run('INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento) VALUES (?, ?, ?, ?)',
+      [id, 'Ordered test', 'ordered@example.test', branch]);
+    for (const [productId, quantity] of items) {
+      await db.run('INSERT INTO dettagli_prenotazioni (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita) VALUES (?, ?, ?, ?, ?)',
+        [id, productId, quantity, 25, '<Specialità>']);
+    }
+    ids.push(...(await db.all('SELECT id FROM dettagli_prenotazioni WHERE prenotazione_id = ?', [id])).map(row => row.id));
+  }
+  const oldNotifications = new Set((await db.all('SELECT id FROM notifiche_stato')).map(row => row.id));
+  const results = await Promise.all([
+    updateItemStates(admin, ids, 'ordinato'), updateItemStates(admin, ids, 'ordinato')
+  ]);
+  assert.equal(results.reduce((sum, result) => sum + result.emailInCoda, 0), 3);
+  assert.equal(results.reduce((sum, result) => sum + result.aggiornati, 0), 4);
+  const notifications = (await db.all('SELECT * FROM notifiche_stato')).filter(row => !oldNotifications.has(row.id));
+  const payloads = notifications.map(row => JSON.parse(row.payload));
+  assert.equal(payloads.length, 3);
+  assert.ok(payloads.every(payload => payload.tipo === 'articoli_ordinati'));
+  assert.deepEqual(payloads.map(payload => payload.destinatario).sort(),
+    ['capo@example.test', 'ordered-clan@example.test', 'ordered-second@example.test']);
+  await db.run('UPDATE prodotti SET costo_acquisto = 99 WHERE id = 1');
+  for (const payload of payloads) {
+    const message = buildOrderedItemsMessage(payload);
+    assert.equal(message.to, payload.destinatario);
+    assert.match(message.html, /&lt;Specialità&gt;/);
+    assert.ok(!message.html.includes('<Specialità>'));
+    if (payload.branca_riferimento === 'Branco') {
+      assert.equal(payload.items.length, 2);
+      assert.equal(payload.items.find(item => item.prodotto_id === 1).quantita, 5);
+      assert.match(message.text, /Totale costo di acquisto: € 75\.00/);
+      assert.match(message.text, /Totale vendita da chiedere ai clienti: € 150\.00/);
+      assert.match(message.html, /€&nbsp;75\.00/);
+      assert.match(message.html, /€&nbsp;150\.00/);
+    } else {
+      assert.equal(payload.branca_riferimento, 'Clan');
+      assert.match(message.text, /Totale costo di acquisto: € 10\.00/);
+      assert.match(message.text, /Totale vendita da chiedere ai clienti: € 25\.00/);
+    }
+  }
+  await db.run('UPDATE prodotti SET costo_acquisto = 12 WHERE id = 1');
+  for (const notification of await db.all('SELECT id FROM notifiche_stato')) {
+    if (oldNotifications.has(notification.id)) {
+      await db.run("UPDATE notifiche_stato SET stato = 'sent' WHERE id = ?", [notification.id]);
+    }
+  }
+  await deliverStatusNotifications(async () => { throw new Error('Ordered SMTP unavailable'); });
+  for (const notification of notifications) {
+    const pending = await db.get('SELECT * FROM notifiche_stato WHERE id = ?', [notification.id]);
+    assert.equal(pending.stato, 'pending');
+    assert.equal(Number(pending.tentativi), 1);
+    assert.equal(pending.ultimo_errore, 'Ordered SMTP unavailable');
+    await db.run('UPDATE notifiche_stato SET prossimo_tentativo = 0 WHERE id = ?', [notification.id]);
+  }
+  const sent = [];
+  await deliverStatusNotifications(async payload => sent.push(payload));
+  assert.equal(sent.length, 3);
+  await deliverStatusNotifications(async () => assert.fail('Do not resend ordered notifications'));
+  assert.deepEqual(await updateItemStates(admin, ids, 'ordinato'), { aggiornati: 0, emailInCoda: 0 });
+  await updateItemStates(admin, [ids[0]], 'prenotato');
+  assert.equal((await updateItemStates(admin, [ids[0]], 'ordinato')).emailInCoda, 2);
+  for (const id of ['ordered-first', 'ordered-second', 'ordered-clan']) {
+    assert.equal((await request(`/api/admin/prenotazioni/${id}`, { method: 'DELETE' })).status, 200);
+  }
+  for (const email of ['ordered-second@example.test', 'ordered-clan@example.test', 'ordered-invalid@example.test']) {
+    await db.run('DELETE FROM admin_users WHERE email = ?', [email]);
+  }
+});
+
 test('removing an account immediately revokes its sessions', async () => {
   const account = await db.get("SELECT id FROM admin_users WHERE email = 'capo@example.test'");
   await db.run('UPDATE admin_users SET branche = ? WHERE id = ?', ['["Branco","Clan"]', account.id]);
@@ -504,6 +658,13 @@ test('schema upgrades legacy purchased lines and preserves states on reinitializ
     const { open } = await import('sqlite');
     const legacy = await open({ filename, driver: sqlite3.Database });
     await legacy.exec(`
+      CREATE TABLE prodotti (
+        id INTEGER PRIMARY KEY, nome TEXT NOT NULL, tipologia TEXT NOT NULL, branca TEXT NOT NULL,
+        taglia TEXT, quantita_magazzino INTEGER, prezzo REAL NOT NULL, usato INTEGER DEFAULT 0,
+        scouting_id_prodotto INTEGER, scouting_caratteristica_id INTEGER, esaurito_scouting INTEGER DEFAULT 0
+      );
+      INSERT INTO prodotti (id, nome, tipologia, branca, prezzo, scouting_id_prodotto)
+        VALUES (1, 'Prodotto legacy', 'Test', 'Lupetti', 19.5, 123);
       CREATE TABLE dettagli_prenotazioni (
         id INTEGER PRIMARY KEY, prenotazione_id TEXT, prodotto_id INTEGER,
         quantita INTEGER, prezzo_unitario REAL, specialita TEXT, acquistato INTEGER DEFAULT 0
@@ -516,12 +677,24 @@ test('schema upgrades legacy purchased lines and preserves states on reinitializ
     const pg = await import('pg');
     const pool = new pg.default.Pool({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT),
       database: process.env.DB_NAME, user: process.env.DB_USERNAME, password: process.env.DB_PASSWORD, ssl: false });
+    await pool.query(`ALTER TABLE prodotti RENAME COLUMN prezzo_vendita TO prezzo;
+      ALTER TABLE prodotti DROP COLUMN costo_acquisto;
+      ALTER TABLE prodotti ADD COLUMN scouting_id_prodotto INTEGER;
+      ALTER TABLE prodotti ADD COLUMN scouting_caratteristica_id INTEGER;
+      ALTER TABLE prodotti ADD COLUMN esaurito_scouting INTEGER DEFAULT 0;`);
     await pool.query('ALTER TABLE dettagli_prenotazioni DROP COLUMN stato');
     await pool.query('UPDATE dettagli_prenotazioni SET acquistato = CASE WHEN id = 1 THEN 1 ELSE 0 END');
     await pool.end();
   }
   await initializeDatabase({ filename });
   db = getDatabase();
+  const product = await db.get('SELECT * FROM prodotti WHERE id = 1');
+  assert.equal(product.prezzo_vendita, process.env.DB_HOST ? 25 : 19.5);
+  assert.equal(product.costo_acquisto, product.prezzo_vendita);
+  for (const column of ['prezzo', 'scouting_id_prodotto', 'scouting_caratteristica_id', 'esaurito_scouting']) {
+    assert.ok(!(column in product));
+  }
+  await db.run('UPDATE prodotti SET prezzo_vendita = 31, costo_acquisto = 9 WHERE id = 1');
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ordinato');
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 2')).stato, 'prenotato');
   await db.run("UPDATE dettagli_prenotazioni SET stato = 'ricevuto' WHERE id = 1");
@@ -537,6 +710,8 @@ test('schema upgrades legacy purchased lines and preserves states on reinitializ
   await closeDatabase();
   await initializeDatabase({ filename });
   db = getDatabase();
+  const preservedPrices = await db.get('SELECT prezzo_vendita, costo_acquisto FROM prodotti WHERE id = 1');
+  assert.deepEqual(preservedPrices, { prezzo_vendita: 31, costo_acquisto: 9 });
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ricevuto');
   const migrated = await db.get('SELECT * FROM dettagli_prenotazioni WHERE id = 2');
   assert.equal(migrated.stato, 'prenotato');

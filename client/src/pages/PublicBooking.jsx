@@ -70,7 +70,7 @@ export default function PublicBooking({ onCartChange, selectedBranch, onSelected
         specialita: product.specialita || null,
         nome: `${product.taglia ? `${product.nome} - Taglia ${product.taglia}` : product.nome}${product.specialita ? ` - ${product.specialita}` : ''}`,
         quantita: quantity,
-        prezzo: product.prezzo
+        prezzo: product.prezzo_vendita
       }]
     })
   }

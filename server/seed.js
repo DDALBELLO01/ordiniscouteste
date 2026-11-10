@@ -60,9 +60,9 @@ async function seedDatabase() {
     for (const product of sampleProducts) {
       await new Promise((resolve, reject) => {
         db.run(
-          `INSERT INTO prodotti (nome, tipologia, branca, quantita_magazzino, prezzo) 
-           VALUES (?, ?, ?, ?, ?)`,
-          [product.nome, product.tipologia, product.branca, product.quantita_magazzino, product.prezzo],
+          `INSERT INTO prodotti (nome, tipologia, branca, quantita_magazzino, prezzo_vendita, costo_acquisto)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [product.nome, product.tipologia, product.branca, product.quantita_magazzino, product.prezzo, product.prezzo],
           function(err) {
             if (err) reject(err);
             resolve();

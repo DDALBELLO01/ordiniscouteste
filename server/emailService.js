@@ -19,13 +19,59 @@ export function buildBookingStatusMessage(booking) {
   const items = booking.items.map(item =>
     `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}${item.specialita ? ` - ${item.specialita}` : ''}: ${item.quantita}`
   );
+  const itemRows = booking.items.map(item => `
+    <tr>
+      <td style="padding:14px 10px;border-bottom:1px solid #e2e8f0;word-break:break-word;">
+        <strong>${escapeHtml(item.nome)}</strong>
+        ${item.taglia ? `<br><span style="color:#64748b;">Taglia: ${escapeHtml(item.taglia)}</span>` : ''}
+        ${item.specialita ? `<br><span style="color:#64748b;">${escapeHtml(item.specialita)}</span>` : ''}
+      </td>
+      <td align="center" style="padding:14px 10px;border-bottom:1px solid #e2e8f0;">${escapeHtml(item.quantita)}</td>
+    </tr>`).join('');
+  const received = booking.stato === 'ricevuto';
+  const statusLabel = received ? 'ARTICOLI RICEVUTI' : 'NON DISPONIBILI';
+  const statusStyle = received
+    ? 'background-color:#f0fdf4;color:#166534;'
+    : 'background-color:#fef2f2;color:#991b1b;';
   const text = `Ciao ${booking.nome_prenotante},\n\n${message[1]}\n\n${items.join('\n')}\n\nPrenotazione: ${booking.id}`;
   return {
     from: process.env.SMTP_USER,
     to: booking.email_prenotante,
     subject: `${message[0]} - Prenotazione Scout ${booking.id}`,
     text,
-    html: `<p>Ciao ${escapeHtml(booking.nome_prenotante)},</p><p>${escapeHtml(message[1])}</p><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>Prenotazione: ${escapeHtml(booking.id)}</p>`
+    html: `<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(message[1])}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 24px;background-color:#2c5282;border-radius:12px 12px 0 0;color:#ffffff;">
+          <p style="margin:0 0 10px;font-size:12px;letter-spacing:2px;font-weight:bold;">ORDINI SCOUT · PRENOTAZIONI</p>
+          <h1 style="margin:0;font-size:26px;line-height:1.3;">${escapeHtml(message[0])}</h1>
+          <p style="margin:10px 0 0;font-size:15px;line-height:1.5;">${escapeHtml(message[1])}</p>
+        </td></tr>
+        <tr><td style="padding:24px;">
+          <p style="margin:0 0 20px;"><span style="display:inline-block;padding:7px 12px;${statusStyle}border-radius:6px;font-size:13px;font-weight:bold;">${statusLabel}</span></p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">Ciao ${escapeHtml(booking.nome_prenotante)},</p>
+          <h2 style="margin:0 0 14px;font-size:18px;">Articoli</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;line-height:1.5;">
+            <thead><tr style="background-color:#f1f5f9;color:#475569;">
+              <th scope="col" align="left" style="padding:10px;">Articolo</th>
+              <th scope="col" align="center" style="padding:10px;">Qtà</th>
+            </tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </td></tr>
+        <tr><td style="padding:18px 24px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.6;word-break:break-word;">
+          <strong>Numero prenotazione</strong><br>${escapeHtml(booking.id)}
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
   };
 }
 
@@ -118,6 +164,78 @@ export function buildLeaderBookingMessage(booking) {
 export async function sendLeaderBookingEmail(booking) {
   if (!transporter) throw new Error('Servizio email non inizializzato');
   await sendMailWithRetry(buildLeaderBookingMessage(booking));
+}
+
+export function buildOrderedItemsMessage(booking) {
+  const purchaseTotal = booking.items.reduce((sum, item) => sum + Number(item.quantita) * Number(item.costo_acquisto), 0);
+  const salesTotal = booking.items.reduce((sum, item) => sum + Number(item.quantita) * Number(item.prezzo_unitario), 0);
+  const text = [
+    `Articoli appena ordinati - Branca ${booking.branca_riferimento}`,
+    '',
+    ...booking.items.map(item =>
+      `${item.nome}${item.taglia ? ` (${item.taglia})` : ''}${item.specialita ? ` - ${item.specialita}` : ''}: ${item.quantita}` +
+      ` | Costo di acquisto: € ${(Number(item.quantita) * Number(item.costo_acquisto)).toFixed(2)}` +
+      ` | Vendita ai clienti: € ${(Number(item.quantita) * Number(item.prezzo_unitario)).toFixed(2)}`
+    ),
+    '',
+    `Totale costo di acquisto: € ${purchaseTotal.toFixed(2)}`,
+    `Totale vendita da chiedere ai clienti: € ${salesTotal.toFixed(2)}`
+  ].join('\n');
+  const itemRows = booking.items.map(item => `
+    <tr>
+      <td style="padding:14px 10px;border-bottom:1px solid #e2e8f0;word-break:break-word;">
+        <strong>${escapeHtml(item.nome)}</strong>
+        ${item.taglia ? `<br><span style="color:#64748b;">Taglia: ${escapeHtml(item.taglia)}</span>` : ''}
+        ${item.specialita ? `<br><span style="color:#64748b;">${escapeHtml(item.specialita)}</span>` : ''}
+      </td>
+      <td align="center" style="padding:14px 6px;border-bottom:1px solid #e2e8f0;">${escapeHtml(item.quantita)}</td>
+      <td align="right" style="padding:14px 6px;border-bottom:1px solid #e2e8f0;">€&nbsp;${(Number(item.quantita) * Number(item.costo_acquisto)).toFixed(2)}</td>
+      <td align="right" style="padding:14px 10px;border-bottom:1px solid #e2e8f0;">€&nbsp;${(Number(item.quantita) * Number(item.prezzo_unitario)).toFixed(2)}</td>
+    </tr>`).join('');
+  return {
+    from: process.env.SMTP_USER,
+    to: booking.destinatario,
+    subject: `[CAPO UNITÀ] Articoli ordinati - ${booking.branca_riferimento}`,
+    text,
+    html: `<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;">
+    <tr><td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 24px;background-color:#2c5282;border-radius:12px 12px 0 0;color:#ffffff;">
+          <p style="margin:0 0 10px;font-size:12px;letter-spacing:2px;font-weight:bold;">ORDINI SCOUT · CAPI UNITÀ</p>
+          <h1 style="margin:0;font-size:26px;line-height:1.3;">Articoli ordinati</h1>
+          <p style="margin:10px 0 0;font-size:15px;line-height:1.5;">Branca ${escapeHtml(booking.branca_riferimento)}</p>
+        </td></tr>
+        <tr><td style="padding:24px;">
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">Questi articoli sono appena passati allo stato Ordinato. Gli importi riguardano soltanto questa operazione.</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;line-height:1.5;">
+            <thead><tr style="background-color:#f1f5f9;color:#475569;">
+              <th scope="col" align="left" style="padding:10px;">Articolo</th>
+              <th scope="col" align="center" style="padding:10px 6px;">Qtà</th>
+              <th scope="col" align="right" style="padding:10px 6px;">Costo di acquisto</th>
+              <th scope="col" align="right" style="padding:10px;">Vendita ai clienti</th>
+            </tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;background-color:#eff6ff;border-radius:8px;font-size:14px;font-weight:bold;color:#1e3a5f;">
+            <tr><td style="padding:18px 14px;">Totale costo di acquisto</td><td align="right" style="padding:18px 14px;font-size:22px;">€&nbsp;${purchaseTotal.toFixed(2)}</td></tr>
+            <tr><td style="padding:18px 14px;">Totale vendita da chiedere ai clienti</td><td align="right" style="padding:18px 14px;font-size:22px;">€&nbsp;${salesTotal.toFixed(2)}</td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  };
+}
+
+export async function sendOrderedItemsEmail(booking) {
+  if (!transporter) throw new Error('Servizio email non inizializzato');
+  await sendMailWithRetry(buildOrderedItemsMessage(booking));
 }
 
 export function initializeEmailService() {

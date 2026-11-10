@@ -62,25 +62,21 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <label>Guida taglie (URL):</label>
           <input type="url" value={formData.guida_taglie_url || ''} onChange={(e) => setFormData({...formData, guida_taglie_url: e.target.value})} placeholder="https://.../guida-taglie.jpg" />
         </div>
-        <div className="form-group">
-          <label>ID Prodotto ScoutingFSE:</label>
-          <input type="number" value={formData.scouting_id_prodotto ?? ''} onChange={(e) => setFormData({...formData, scouting_id_prodotto: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Es. 2819" />
-        </div>
         {!groupEdit && (
           <>
           <div className="form-group">
             <label>Quantità Magazzino:</label>
             <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
           </div>
-          <div className="form-group">
-            <label>Codice taglia ScoutingFSE:</label>
-            <input type="number" value={formData.scouting_caratteristica_id ?? ''} onChange={(e) => setFormData({...formData, scouting_caratteristica_id: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Es. 16101" />
-          </div>
           </>
         )}
         <div className="form-group">
-          <label>Prezzo (€):</label>
-          <input type="number" step="0.01" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: parseFloat(e.target.value)})} required />
+          <label>Prezzo di vendita (€):</label>
+          <input type="number" min="0" step="0.01" value={formData.prezzo_vendita} onChange={(e) => setFormData({...formData, prezzo_vendita: e.target.value})} required />
+        </div>
+        <div className="form-group">
+          <label>Costo di acquisto (€):</label>
+          <input type="number" min="0" step="0.01" value={formData.costo_acquisto} onChange={(e) => setFormData({...formData, costo_acquisto: e.target.value})} required />
         </div>
       </div>
       <div className="form-row">
@@ -112,10 +108,6 @@ function ProductVariantForm({ formRef, formData, setFormData, editingId, handleS
         <div className="form-group">
           <label>Quantità magazzino:</label>
           <input type="number" min="0" value={formData.quantita_magazzino ?? ''} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
-        </div>
-        <div className="form-group">
-          <label>Codice taglia ScoutingFSE:</label>
-          <input type="number" value={formData.scouting_caratteristica_id ?? ''} onChange={(e) => setFormData({...formData, scouting_caratteristica_id: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Es. 16101" />
         </div>
       </div>
       <div className="form-actions">
@@ -152,11 +144,10 @@ export default function ProductManagement() {
     immagine: '',
     guida_taglie_url: '',
     quantita_magazzino: '',
-    prezzo: 0,
+    prezzo_vendita: 0,
+    costo_acquisto: 0,
     usato: false,
     mostra_home: true,
-    scouting_id_prodotto: '',
-    scouting_caratteristica_id: '',
   })
 
   const branches = ['Coccinelle', 'Lupetti', 'Guide', 'Esploratori', 'Scolte', 'Rover', 'Capi', 'Tutti']
@@ -173,7 +164,7 @@ export default function ProductManagement() {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get('/api/prodotti?admin=true')
+      const response = await axios.get('/api/admin/prodotti')
       setProducts(response.data)
       setLoading(false)
     } catch (error) {
@@ -189,8 +180,7 @@ export default function ProductManagement() {
         await Promise.all(editingGroup.variants.map(variant => axios.put(`/api/admin/prodotti/${variant.id}`, {
           ...formData,
           taglia: variant.taglia,
-          quantita_magazzino: variant.quantita_magazzino,
-          scouting_caratteristica_id: variant.scouting_caratteristica_id
+          quantita_magazzino: variant.quantita_magazzino
         })))
       } else if (editingId) {
         await axios.put(`/api/admin/prodotti/${editingId}`, formData)
@@ -253,11 +243,10 @@ export default function ProductManagement() {
       immagine: '',
       guida_taglie_url: '',
       quantita_magazzino: '',
-      prezzo: 0,
+      prezzo_vendita: 0,
+      costo_acquisto: 0,
       usato: false,
       mostra_home: true,
-      scouting_id_prodotto: '',
-      scouting_caratteristica_id: '',
     })
     setEditingId(null)
     setEditingGroup(null)
@@ -440,18 +429,19 @@ export default function ProductManagement() {
           <thead>
             <tr>
               <th>Articolo</th><th>Tipologia</th><th>Branche</th><th>Taglia</th><th>Immagine</th>
-              <th>Quantità</th><th>Prezzo</th><th>Usato</th><th>Home</th><th>Azioni</th>
+              <th>Quantità</th><th>Prezzo di vendita</th><th>Costo di acquisto</th><th>Usato</th><th>Home</th><th>Azioni</th>
             </tr>
           </thead>
           <tbody>
             {productGroups.map(group => (
               <Fragment key={`${group.nome}-${group.branca}-${group.immagine || ''}`}>
                 <tr className="product-group-header">
-                  <td colSpan="10">
+                  <td colSpan="11">
                     <strong>{group.nome}</strong>
                     <span>{group.tipologia}</span>
                     <span>Branche: {parseBranches(group.branca).join(', ')}</span>
-                    <span>Prezzi: {[...new Set(group.variants.map(variant => `€ ${Number(variant.prezzo || 0).toFixed(2)}`))].join(', ')}</span>
+                    <span>Prezzo di vendita: {[...new Set(group.variants.map(variant => `€ ${Number(variant.prezzo_vendita).toFixed(2)}`))].join(', ')}</span>
+                    <span>Costo di acquisto: {[...new Set(group.variants.map(variant => `€ ${Number(variant.costo_acquisto).toFixed(2)}`))].join(', ')}</span>
                     <span>{group.usato ? 'Usato' : 'Nuovo'}</span>
                     <span>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</span>
                     {group.immagine && <img className="product-thumb" src={group.immagine} alt="" />}
@@ -459,7 +449,7 @@ export default function ProductManagement() {
                   </td>
                 </tr>
                 {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && (
-                  <tr><td colSpan="10"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                  <tr><td colSpan="11"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
                 )}
                 {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && editTarget && createPortal(
                   <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingGroup.nome} handleSave={handleSave} resetForm={resetForm} groupEdit />,
@@ -472,7 +462,8 @@ export default function ProductManagement() {
                       <td>{product.taglia || 'Taglia unica'}</td>
                       <td></td>
                       <td>{product.quantita_magazzino === null || product.quantita_magazzino === undefined ? '∞' : product.quantita_magazzino}</td>
-                      <td>€ {Number(product.prezzo || 0).toFixed(2)}</td>
+                      <td>€ {Number(product.prezzo_vendita).toFixed(2)}</td>
+                      <td>€ {Number(product.costo_acquisto).toFixed(2)}</td>
                       <td></td><td></td>
                       <td className="actions">
                         <button className="btn-small btn-copy" onClick={() => handleDuplicate(product)}>📄 Duplica</button>
@@ -481,7 +472,7 @@ export default function ProductManagement() {
                       </td>
                     </tr>
                     {product.id === editingId && (
-                      <tr><td colSpan="10"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                      <tr><td colSpan="11"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
                     )}
                     {product.id === editingId && editTarget && createPortal(
                       <ProductVariantForm formRef={formRef} formData={formData} setFormData={setFormData} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,

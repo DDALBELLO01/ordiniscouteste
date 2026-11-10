@@ -6,9 +6,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase, withTransaction } from './database.js';
-import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch, assertBookingAccess, queueLeaderBookingNotifications, deleteBookingItems } from './bookingWorkflow.js';
+import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch, assertBookingAccess, queueLeaderBookingNotifications, queueOrderedNotifications, deleteBookingItems } from './bookingWorkflow.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
-import { ottieniProdottoScouting, attesa } from './scoutingSync.js';
  
 
 dotenv.config();
@@ -22,8 +21,6 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
-// CORS aperto per l'endpoint pubblico usato dal bookmarklet eseguito su scoutingfse.it
-app.use('/api/public', cors({ origin: '*' }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 
@@ -34,18 +31,15 @@ app.use(express.static(clientDist));
 app.get('/api/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
-    const query = req.query.admin === 'true'
-      ? 'SELECT * FROM prodotti ORDER BY branca, tipologia'
-      : 'SELECT * FROM prodotti WHERE mostra_home = 1 ORDER BY branca, tipologia';
-    let prodotti = await db.all(query);
-    if (req.query.admin !== 'true') {
-      // NASCONDE AUTOMATICAMENTE I PEZZI USATI CON GIACENZA 0 O INFERIORE
-      prodotti = prodotti.filter(p => {
-        const isUsato = p.usato === 1 || p.usato === true;
-        const isOut = p.quantita_magazzino !== null && p.quantita_magazzino !== undefined && Number(p.quantita_magazzino) <= 0;
-        return !(isUsato && isOut);
-      });
-    }
+    let prodotti = await db.all(`SELECT id, nome, tipologia, branca, taglia, specialita, immagine,
+      guida_taglie_url, quantita_magazzino, prezzo_vendita, usato, mostra_home
+      FROM prodotti WHERE mostra_home = 1 ORDER BY branca, tipologia`);
+    // NASCONDE AUTOMATICAMENTE I PEZZI USATI CON GIACENZA 0 O INFERIORE
+    prodotti = prodotti.filter(p => {
+      const isUsato = p.usato === 1 || p.usato === true;
+      const isOut = p.quantita_magazzino !== null && p.quantita_magazzino !== undefined && Number(p.quantita_magazzino) <= 0;
+      return !(isUsato && isOut);
+    });
     res.json(prodotti);
   } catch (error) {
     console.error('Errore lettura prodotti:', error);
@@ -148,7 +142,7 @@ app.post('/api/prenotazioni', async (req, res) => {
         }
         await db.run(
           'INSERT INTO dettagli_prenotazioni (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita) VALUES (?, ?, ?, ?, ?)',
-          [prenotazione_id, item.prodotto_id, item.quantita, prodotto.prezzo, item.specialita || null]
+          [prenotazione_id, item.prodotto_id, item.quantita, prodotto.prezzo_vendita, item.specialita || null]
         );
         if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
           await db.run(
@@ -201,22 +195,35 @@ app.post('/api/prenotazioni', async (req, res) => {
 // Admin Routes
 registerBookingWorkflow(app);
 
+app.get('/api/admin/prodotti', async (req, res) => {
+  try {
+    const products = await getDatabase().all('SELECT * FROM prodotti ORDER BY branca, tipologia');
+    res.json(req.user.ruolo === 'admin' ? products : products.map(({ costo_acquisto, ...product }) => product));
+  } catch (error) {
+    console.error('Errore lettura prodotti:', error);
+    res.status(500).json({ error: 'Errore lettura prodotti' });
+  }
+});
+
+const isValidPrice = value => (typeof value === 'number' || typeof value === 'string' && value.trim() !== '') &&
+  Number.isFinite(Number(value)) && Number(value) >= 0;
+
 app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home } = req.body;
+    if (!isValidPrice(prezzo_vendita) || !isValidPrice(costo_acquisto)) {
+      return res.status(400).json({ error: 'Inserisci prezzo di vendita e costo di acquisto validi e non negativi' });
+    }
     const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
     if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
-    const scoutingIdProdotto = scouting_id_prodotto === '' || scouting_id_prodotto === null || scouting_id_prodotto === undefined ? null : Number(scouting_id_prodotto);
-    const scoutingCaratteristicaId = scouting_caratteristica_id === '' || scouting_caratteristica_id === null || scouting_caratteristica_id === undefined ? null : Number(scouting_caratteristica_id);
-
     const result = await db.run(
-      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scoutingIdProdotto, scoutingCaratteristicaId]
+      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
     );
 
     if (String(guida_taglie_url || '').trim()) {
@@ -233,19 +240,19 @@ app.post('/api/admin/prodotti', async (req, res) => {
 app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo, usato, mostra_home, scouting_id_prodotto, scouting_caratteristica_id } = req.body;
+    const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home } = req.body;
+    if (!isValidPrice(prezzo_vendita) || !isValidPrice(costo_acquisto)) {
+      return res.status(400).json({ error: 'Inserisci prezzo di vendita e costo di acquisto validi e non negativi' });
+    }
     const brancaValue = Array.isArray(branca) ? branca.filter(Boolean).join(', ') : String(branca || '').trim();
     if (!brancaValue) return res.status(400).json({ error: 'Selezionare almeno una branca' });
     const quantita = quantita_magazzino === '' || quantita_magazzino === null || quantita_magazzino === undefined
       ? null
       : Number(quantita_magazzino);
-    const scoutingIdProdotto = scouting_id_prodotto === '' || scouting_id_prodotto === null || scouting_id_prodotto === undefined ? null : Number(scouting_id_prodotto);
-    const scoutingCaratteristicaId = scouting_caratteristica_id === '' || scouting_caratteristica_id === null || scouting_caratteristica_id === undefined ? null : Number(scouting_caratteristica_id);
-
     await db.run(
-      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo = ?, usato = ?, mostra_home = ?, scouting_id_prodotto = ?, scouting_caratteristica_id = ?, updated_at = CURRENT_TIMESTAMP
+      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo_vendita = ?, costo_acquisto = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, prezzo, usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, scoutingIdProdotto, scoutingCaratteristicaId, req.params.id]
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
     );
 
     await db.run('UPDATE prodotti SET guida_taglie_url = ? WHERE nome = ?', [String(guida_taglie_url || '').trim() || null, nome]);
@@ -265,50 +272,6 @@ app.delete('/api/admin/prodotti/:id', async (req, res) => {
   } catch (error) {
     console.error('Errore eliminazione prodotto:', error);
     res.status(500).json({ error: 'Errore eliminazione prodotto' });
-  }
-});
-
-// Sincronizza tutti gli articoli collegati a un ID Prodotto ScoutingFSE, senza necessità di login
-app.post('/api/admin/scouting/sincronizza-tutti', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const idProdottiRighe = await db.all(
-      'SELECT DISTINCT scouting_id_prodotto FROM prodotti WHERE scouting_id_prodotto IS NOT NULL'
-    );
-
-    const aggiornati = [];
-    const nonCollegati = [];
-    const errori = [];
-
-    for (const { scouting_id_prodotto: idProdotto } of idProdottiRighe) {
-      try {
-        const dettaglio = await ottieniProdottoScouting(idProdotto);
-        for (const variante of dettaglio.varianti) {
-          const prodotto = await db.get(
-            'SELECT * FROM prodotti WHERE scouting_caratteristica_id = ?',
-            [variante.scouting_caratteristica_id]
-          );
-          if (!prodotto) {
-            nonCollegati.push(variante);
-            continue;
-          }
-          await db.run(
-            `UPDATE prodotti SET prezzo = ?, esaurito_scouting = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [variante.prezzo ?? prodotto.prezzo, variante.disponibile ? 0 : 1, prodotto.id]
-          );
-          aggiornati.push({ id: prodotto.id, nome: dettaglio.nome, taglia: prodotto.taglia, prezzo: variante.prezzo, disponibile: variante.disponibile });
-        }
-      } catch (error) {
-        console.error(`Errore sincronizzazione ScoutingFSE per ID ${idProdotto}:`, error);
-        errori.push({ scouting_id_prodotto: idProdotto, error: error.message });
-      }
-      await attesa(400);
-    }
-
-    res.json({ aggiornati, nonCollegati, errori });
-  } catch (error) {
-    console.error('Errore sincronizzazione ScoutingFSE:', error);
-    res.status(502).json({ error: 'Errore durante la sincronizzazione con ScoutingFSE' });
   }
 });
 
@@ -432,8 +395,8 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
         for (const { item, oldItem } of resolvedItems) {
           const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
           const prezzoUnitario = Number(req.user.ruolo === 'capo_unita'
-            ? oldItem?.prezzo_unitario ?? prodotto?.prezzo
-            : item.prezzo_unitario ?? prodotto?.prezzo);
+            ? oldItem?.prezzo_unitario ?? prodotto?.prezzo_vendita
+            : item.prezzo_unitario ?? prodotto?.prezzo_vendita);
           if (!prodotto || !Number.isFinite(prezzoUnitario) || prezzoUnitario < 0) {
             const error = new Error('Prodotto o prezzo non valido');
             error.status = 400;
@@ -531,7 +494,7 @@ app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
   }
 
   try {
-    const acquistati = await withTransaction(async db => {
+    const result = await withTransaction(async db => {
       let acquistati = 0;
       if (db.pool) {
         await db.all(`SELECT id FROM prenotazioni WHERE id IN (
@@ -539,16 +502,20 @@ app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
         ) ORDER BY id FOR UPDATE`, productIds);
       }
 
+      const rows = await db.all(
+        `SELECT dp.*, p.nome, p.taglia, p.costo_acquisto, pr.branca_riferimento
+         FROM dettagli_prenotazioni dp
+         JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
+         JOIN prodotti p ON p.id = dp.prodotto_id
+         WHERE dp.prodotto_id IN (${productIds.map(() => '?').join(',')})
+           AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL)
+           AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
+         ORDER BY dp.id ${db.pool ? 'FOR UPDATE OF dp' : ''}`,
+        productIds
+      );
       for (const productId of productIds) {
-        const richieste = await db.get(
-          `SELECT COALESCE(SUM(dp.quantita), 0) AS quantita
-           FROM dettagli_prenotazioni dp
-           JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-           WHERE dp.prodotto_id = ? AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL)
-             AND (pr.archiviata = 0 OR pr.archiviata IS NULL)`,
-          [productId]
-        );
-        const quantita = Number(richieste?.quantita || 0);
+        const quantita = rows.filter(row => row.prodotto_id === productId)
+          .reduce((sum, row) => sum + Number(row.quantita), 0);
 
         if (quantita > 0) {
           await db.run(
@@ -572,9 +539,13 @@ app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
         }
       }
 
-      return acquistati;
+      for (const bookingId of new Set(rows.map(row => row.prenotazione_id))) {
+        await db.run('UPDATE prenotazioni SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [bookingId]);
+      }
+      const emailInCoda = await queueOrderedNotifications(db, rows);
+      return { acquistati, emailInCoda };
     });
-    res.json({ message: 'Articoli segnati come acquistati', acquistati });
+    res.json({ message: 'Articoli segnati come acquistati', ...result });
   } catch (error) {
     console.error('Errore registrazione acquisto:', error);
     res.status(500).json({ error: 'Errore registrazione acquisto' });

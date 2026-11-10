@@ -90,9 +90,30 @@ async function initializeWorkflowSchema() {
   });
 }
 
+async function initializeProductPricingSchema() {
+  await withTransaction(async connection => {
+    const columns = db.pool
+      ? await connection.all("SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'prodotti' AND table_schema = current_schema()")
+      : await connection.all('PRAGMA table_info(prodotti)');
+    const names = new Set(columns.map(column => column.name));
+    for (const column of ['prezzo_vendita', 'costo_acquisto']) {
+      if (!names.has(column)) {
+        await connection.run(`ALTER TABLE prodotti ADD COLUMN ${column} DOUBLE PRECISION NOT NULL DEFAULT 0`);
+        if (names.has('prezzo')) {
+          await connection.run(`UPDATE prodotti SET ${column} = prezzo`);
+        }
+      }
+    }
+    for (const column of ['prezzo', 'scouting_id_prodotto', 'scouting_caratteristica_id', 'esaurito_scouting']) {
+      if (names.has(column)) await connection.run(`ALTER TABLE prodotti DROP COLUMN ${column}`);
+    }
+  });
+}
+
 export async function initializeDatabase({ filename = DB_PATH } = {}) {
   if (process.env.DB_HOST) {
     await initializePostgresDatabase();
+    await initializeProductPricingSchema();
     await initializeWorkflowSchema();
     return db;
   }
@@ -123,7 +144,8 @@ export async function initializeDatabase({ filename = DB_PATH } = {}) {
       specialita TEXT,
       immagine TEXT,
       quantita_magazzino INTEGER,
-      prezzo REAL NOT NULL,
+      prezzo_vendita REAL NOT NULL,
+      costo_acquisto REAL NOT NULL,
       usato INTEGER DEFAULT 0,
       mostra_home INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -150,17 +172,8 @@ export async function initializeDatabase({ filename = DB_PATH } = {}) {
     await db.run('ALTER TABLE prodotti ADD COLUMN mostra_home INTEGER DEFAULT 1');
     await db.run('UPDATE prodotti SET mostra_home = 1 WHERE mostra_home IS NULL');
   }
-  if (!colonneProdotti.some(colonna => colonna.name === 'scouting_id_prodotto')) {
-    await db.run('ALTER TABLE prodotti ADD COLUMN scouting_id_prodotto INTEGER');
-  }
-  if (!colonneProdotti.some(colonna => colonna.name === 'scouting_caratteristica_id')) {
-    await db.run('ALTER TABLE prodotti ADD COLUMN scouting_caratteristica_id INTEGER');
-  }
   if (!colonneProdotti.some(colonna => colonna.name === 'guida_taglie_url')) {
     await db.run('ALTER TABLE prodotti ADD COLUMN guida_taglie_url TEXT');
-  }
-  if (!colonneProdotti.some(colonna => colonna.name === 'esaurito_scouting')) {
-    await db.run('ALTER TABLE prodotti ADD COLUMN esaurito_scouting INTEGER DEFAULT 0');
   }
 
   // Tabella Prenotazioni
@@ -270,6 +283,7 @@ export async function initializeDatabase({ filename = DB_PATH } = {}) {
       return current ? current[method](...args) : serializeSqlite(() => connection[method](...args));
     };
   }
+  await initializeProductPricingSchema();
   await initializeWorkflowSchema();
   return db;
 }
@@ -344,7 +358,8 @@ async function initializePostgresDatabase() {
       specialita TEXT,
       immagine TEXT,
       quantita_magazzino INTEGER,
-      prezzo DOUBLE PRECISION NOT NULL,
+      prezzo_vendita DOUBLE PRECISION NOT NULL,
+      costo_acquisto DOUBLE PRECISION NOT NULL,
       usato INTEGER DEFAULT 0,
       mostra_home INTEGER DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -384,9 +399,6 @@ async function initializePostgresDatabase() {
       password_hash TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_id_prodotto INTEGER;
-    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS scouting_caratteristica_id INTEGER;
-    ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS esaurito_scouting INTEGER DEFAULT 0;
     ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS guida_taglie_url TEXT;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS archiviata INTEGER DEFAULT 0;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS data_archiviazione TIMESTAMP;

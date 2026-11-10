@@ -359,7 +359,7 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get('/api/prodotti?admin=true')
+      const response = await axios.get('/api/admin/prodotti')
       setAllProducts(response.data)
     } catch (error) {
       console.error('Errore prodotti:', error)
@@ -401,7 +401,7 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
           prodotto_id: prod.id,
           nome: `${prod.nome}${prod.taglia ? ` - ${prod.taglia}` : ''}`,
           quantita: 1,
-          prezzo_unitario: prod.prezzo,
+          prezzo_unitario: prod.prezzo_vendita,
           specialita: null
         }]
       }
@@ -596,7 +596,7 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
                     <option value="">Aggiungi un altro articolo dal catalogo...</option>
                     {allProducts.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.nome} {p.taglia ? `(${p.taglia})` : ''} - € {p.prezzo.toFixed(2)}
+                        {p.nome} {p.taglia ? `(${p.taglia})` : ''} - € {Number(p.prezzo_vendita).toFixed(2)}
                       </option>
                     ))}
                   </select>
