@@ -32,7 +32,7 @@ function BranchCheckboxes({ value, onChange, branches }) {
 
 function ProductForm({ formRef, formData, setFormData, branches, editingId, handleSave, resetForm, groupEdit = false }) {
   return (
-    <form ref={formRef} className="management-form" onSubmit={handleSave}>
+    <form ref={formRef} className="management-form product-form" onSubmit={handleSave}>
       <div className="form-row">
         <div className="form-group">
           <label>Nome:</label>
@@ -43,17 +43,11 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <input type="text" value={formData.tipologia} onChange={(e) => setFormData({...formData, tipologia: e.target.value})} required />
         </div>
       </div>
+      <div className="form-group product-branches">
+        <label>Branche:</label>
+        <BranchCheckboxes value={formData.branca} onChange={(branca) => setFormData({...formData, branca})} branches={branches} />
+      </div>
       <div className="form-row">
-        <div className="form-group">
-          <label>Branca:</label>
-          <BranchCheckboxes value={formData.branca} onChange={(branca) => setFormData({...formData, branca})} branches={branches} />
-        </div>
-        {!groupEdit && (
-          <div className="form-group">
-            <label>Taglia:</label>
-            <input type="text" value={formData.taglia} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, L, XL o 6-8 anni" />
-          </div>
-        )}
         <div className="form-group">
           <label>Immagine (URL):</label>
           <input type="url" value={formData.immagine || ''} onChange={(e) => setFormData({...formData, immagine: e.target.value})} placeholder="https://..." />
@@ -62,14 +56,20 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <label>Guida taglie (URL):</label>
           <input type="url" value={formData.guida_taglie_url || ''} onChange={(e) => setFormData({...formData, guida_taglie_url: e.target.value})} placeholder="https://.../guida-taglie.jpg" />
         </div>
-        {!groupEdit && (
-          <>
+      </div>
+      {!groupEdit && (
+        <div className="form-row">
+          <div className="form-group">
+            <label>Taglia:</label>
+            <input type="text" value={formData.taglia} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, L, XL o 6-8 anni" />
+          </div>
           <div className="form-group">
             <label>Quantità Magazzino:</label>
             <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
           </div>
-          </>
-        )}
+        </div>
+      )}
+      <div className="form-row">
         <div className="form-group">
           <label>Prezzo di vendita (€):</label>
           <input type="number" min="0" step="0.01" value={formData.prezzo_vendita} onChange={(e) => setFormData({...formData, prezzo_vendita: e.target.value})} required />
@@ -79,14 +79,14 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
           <input type="number" min="0" step="0.01" value={formData.costo_acquisto} onChange={(e) => setFormData({...formData, costo_acquisto: e.target.value})} required />
         </div>
       </div>
-      <div className="form-row">
-        <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+      <div className="product-options">
+        <div className="product-option">
           <input type="checkbox" id={`usato-${editingId || 'nuovo'}`} checked={formData.usato} onChange={(e) => setFormData({...formData, usato: e.target.checked})} />
-          <label htmlFor={`usato-${editingId || 'nuovo'}`} style={{marginBottom: 0}}>Articolo usato</label>
+          <label htmlFor={`usato-${editingId || 'nuovo'}`}>Articolo usato</label>
         </div>
-        <div className="form-group" style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+        <div className="product-option">
           <input type="checkbox" id={`mostra-home-${editingId || 'nuovo'}`} checked={formData.mostra_home !== false && formData.mostra_home !== 0} onChange={(e) => setFormData({...formData, mostra_home: e.target.checked})} />
-          <label htmlFor={`mostra-home-${editingId || 'nuovo'}`} style={{marginBottom: 0}}>Visibile nella home</label>
+          <label htmlFor={`mostra-home-${editingId || 'nuovo'}`}>Visibile nella home</label>
         </div>
       </div>
       <div className="form-actions">

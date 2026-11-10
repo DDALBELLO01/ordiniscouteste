@@ -65,7 +65,10 @@ Per suggerire una feature:
 #### Prezzi degli articoli
 
 - La testata articolo gestisce **Prezzo di vendita** e **Costo di acquisto**,
-  applicabili alle varianti tramite **Modifica testata**. Il vecchio campo
+  applicabili alle varianti tramite **Modifica testata**. La scelta delle
+  branche occupa una riga orizzontale con ritorno a capo; URL e prezzi sono
+  affiancati per coppie, mentre su mobile i campi si dispongono in colonna.
+  Il vecchio campo
   `prezzo` viene migrato automaticamente nei due nuovi campi e poi rimosso,
   sia su SQLite sia su PostgreSQL. I successivi avvii non sovrascrivono i valori.
 - Catalogo pubblico, carrello, prenotazioni e importi da riscuotere usano il
