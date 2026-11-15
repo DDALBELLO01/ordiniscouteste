@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
+import { PRODUCT_TYPES } from '../productTypes'
 
 function sizeSortKey(value) {
   const text = String(value || '').trim().toUpperCase()
@@ -66,15 +67,16 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const handleAdd = (product) => {
     const quantity = quantities[product.id] || 1
     const isUsato = product.usato === 1 || product.usato === true
+    const limited = isUsato || !!product.non_a_catalogo_scouting
 
-    if (isUsato) {
+    if (limited) {
       if (product.quantita_magazzino !== null && product.quantita_magazzino !== undefined) {
         if (product.quantita_magazzino <= 0) {
-          showMessage('Articolo usato non disponibile', 'Articolo non disponibile')
+          showMessage('Articolo non disponibile in magazzino', 'Articolo non disponibile')
           return
         }
         if (quantity > product.quantita_magazzino) {
-          showMessage(`Quantità usata massima disponibile: ${product.quantita_magazzino}`, 'Quantità non disponibile')
+          showMessage(`Quantità massima disponibile: ${product.quantita_magazzino}`, 'Quantità non disponibile')
           return
         }
       }
@@ -87,6 +89,11 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const handleAddGroup = (group) => {
     const tipologiaLower = group.tipologia.toLowerCase()
     const nomeLower = group.nome.toLowerCase()
+    if (tipologiaLower.includes('distintiv')) {
+      setSpecialitaName('')
+      setSpecialitaPicker(group)
+      return
+    }
     if (
       tipologiaLower.includes('specialit') ||
       nomeLower.includes('specialit') ||
@@ -105,7 +112,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   }
 
   const options = useMemo(() => ({
-    tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
+    tipologie: PRODUCT_TYPES,
     taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort(compareSizes)
   }), [products])
 
@@ -135,7 +142,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
       Esploratori: '⛺',
       Scolte: '🔥',
       Rover: '🛶',
-      Capi: '🇷🇸',
+      Capi: '⚜️',
       Tutti: '✦'
     }
     return symbols[branch] || '✦'
@@ -145,7 +152,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
     // Nascondi automaticamente i pezzi usati esauriti (quantita_magazzino <= 0)
     const isUsato = product.usato === 1 || product.usato === true
     const isOutLocal = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
-    if (isUsato && isOutLocal) return false
+    if ((isUsato || product.non_a_catalogo_scouting) && isOutLocal) return false
 
     const search = filters.search.trim().toLowerCase()
     const matchesSearch = !search || [product.nome, product.tipologia, product.branca, product.taglia]
@@ -162,7 +169,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
   const groupedProducts = useMemo(() => {
     const groups = new Map()
     filteredProducts.forEach(product => {
-      const key = [product.nome, product.tipologia, product.branca, product.prezzo_vendita, product.immagine || '', product.usato].join('|')
+      const key = [product.nome, product.tipologia, product.branca, product.prezzo_vendita, product.immagine || '', product.usato, product.non_a_catalogo_scouting].join('|')
       if (!groups.has(key)) groups.set(key, { ...product, items: [] })
       groups.get(key).items.push(product)
     })
@@ -298,7 +305,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
           const availableItems = product.items.filter(item => {
             const isUsatoItem = item.usato === 1 || item.usato === true
             const isOutLocalItem = item.quantita_magazzino !== null && item.quantita_magazzino !== undefined && item.quantita_magazzino <= 0
-            if (isUsatoItem && isOutLocalItem) return false
+            if ((isUsatoItem || item.non_a_catalogo_scouting) && isOutLocalItem) return false
             return true
           })
 
@@ -306,11 +313,12 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
           const sortedItems = [...product.items].sort((first, second) => compareSizes(first.taglia, second.taglia))
           const sizes = sortedItems.map(item => item.taglia).filter(Boolean)
           const isUsato = product.usato === 1 || product.usato === true
+          const limited = isUsato || !!product.non_a_catalogo_scouting
           const localStock = product.quantita_magazzino
 
           let stockText = ''
-          if (isUsato) {
-            stockText = localStock ? `Disponibili usati: ${localStock}` : 'Usato disponibile'
+          if (limited) {
+            stockText = localStock ? `Disponibili${isUsato ? ' usati' : ''}: ${localStock}` : 'Disponibile in magazzino'
           } else {
             if (localStock !== null && localStock !== undefined && localStock > 0) {
               stockText = `Disponibile in magazzino (${localStock} pz)`
@@ -351,7 +359,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
                 <p className="product-price">€ {Number(product.prezzo_vendita).toFixed(2)}</p>
                 {available ? (
                   <div className="product-footer">
-                    <input type="number" min="1" max={isUsato ? (product.quantita_magazzino || undefined) : undefined} value={quantities[product.id] || 1} onChange={(e) => handleQuantityChange(product.id, e.target.value)} className="qty-input" aria-label={`Quantità ${product.nome}`} />
+                    <input type="number" min="1" max={limited ? (product.quantita_magazzino || undefined) : undefined} value={quantities[product.id] || 1} onChange={(e) => handleQuantityChange(product.id, e.target.value)} className="qty-input" aria-label={`Quantità ${product.nome}`} />
                     <button type="button" className="btn-add" onClick={() => handleAddGroup(product)}>{sizes.length > 1 ? 'Scegli taglia' : 'Aggiungi'}</button>
                   </div>
                 ) : <span className="out-of-stock">Esaurito</span>}
@@ -374,7 +382,7 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
               {[...sizePicker.items].sort((first, second) => compareSizes(first.taglia, second.taglia)).map(item => {
                 const isUsatoItem = item.usato === 1 || item.usato === true
                 const isOutLocalItem = item.quantita_magazzino !== null && item.quantita_magazzino !== undefined && item.quantita_magazzino <= 0
-                const itemAvailable = !(isUsatoItem && isOutLocalItem)
+                const itemAvailable = !((isUsatoItem || item.non_a_catalogo_scouting) && isOutLocalItem)
 
                 return (
                   <button key={item.id} type="button" disabled={!itemAvailable} onClick={() => { handleAdd(item); setSizePicker(null) }}>
@@ -389,10 +397,11 @@ export default function ProductSelector({ products, onAddItem, selectedBranch, o
       )}
 
       {specialitaPicker && (() => {
+        const isDistintivo = specialitaPicker.tipologia.toLowerCase().includes('distintiv')
         const isBarretta = specialitaPicker.tipologia.toLowerCase().includes('barrett') || specialitaPicker.nome.toLowerCase().includes('barrett')
-        const labelText = isBarretta ? 'Scegli la funzione / barretta' : 'Scegli la specialità'
-        const placeholderText = isBarretta ? 'Inserisci la funzione (es. Capo Branco, Akela, CR...)' : 'Inserisci il nome della specialità'
-        const buttonText = isBarretta ? 'Aggiungi barretta' : 'Aggiungi specialità'
+        const labelText = isDistintivo ? 'Indica il distintivo specifico' : isBarretta ? 'Scegli la funzione / barretta' : 'Scegli la specialità'
+        const placeholderText = isDistintivo ? 'Es. distintivo di gruppo, regionale...' : isBarretta ? 'Inserisci la funzione (es. Capo Branco, Akela, CR...)' : 'Inserisci il nome della specialità'
+        const buttonText = isDistintivo ? 'Aggiungi distintivo' : isBarretta ? 'Aggiungi barretta' : 'Aggiungi specialità'
 
         return (
           <div className="size-picker-overlay" role="dialog" aria-modal="true" aria-labelledby="specialita-picker-title">

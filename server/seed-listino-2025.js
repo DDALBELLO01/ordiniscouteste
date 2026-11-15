@@ -181,6 +181,7 @@ async function seedDatabase() {
         nome_prenotante TEXT NOT NULL,
         email_prenotante TEXT NOT NULL,
         branca_riferimento TEXT,
+        genitore_di TEXT,
         data_prenotazione DATETIME DEFAULT CURRENT_TIMESTAMP,
         stato TEXT DEFAULT 'attiva',
         note TEXT,

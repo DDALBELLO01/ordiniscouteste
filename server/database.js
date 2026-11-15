@@ -96,6 +96,9 @@ async function initializeProductPricingSchema() {
       ? await connection.all("SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'prodotti' AND table_schema = current_schema()")
       : await connection.all('PRAGMA table_info(prodotti)');
     const names = new Set(columns.map(column => column.name));
+    if (!names.has('non_a_catalogo_scouting')) {
+      await connection.run('ALTER TABLE prodotti ADD COLUMN non_a_catalogo_scouting INTEGER NOT NULL DEFAULT 0');
+    }
     for (const column of ['prezzo_vendita', 'costo_acquisto']) {
       if (!names.has(column)) {
         await connection.run(`ALTER TABLE prodotti ADD COLUMN ${column} DOUBLE PRECISION NOT NULL DEFAULT 0`);
@@ -183,6 +186,7 @@ export async function initializeDatabase({ filename = DB_PATH } = {}) {
       nome_prenotante TEXT NOT NULL,
       email_prenotante TEXT NOT NULL,
       branca_riferimento TEXT,
+      genitore_di TEXT,
       data_prenotazione DATETIME DEFAULT CURRENT_TIMESTAMP,
       stato TEXT DEFAULT 'attiva',
       note TEXT,
@@ -194,6 +198,9 @@ export async function initializeDatabase({ filename = DB_PATH } = {}) {
   const colonnePrenotazioni = await db.all('PRAGMA table_info(prenotazioni)');
   if (!colonnePrenotazioni.some(colonna => colonna.name === 'branca_riferimento')) {
     await db.run('ALTER TABLE prenotazioni ADD COLUMN branca_riferimento TEXT');
+  }
+  if (!colonnePrenotazioni.some(colonna => colonna.name === 'genitore_di')) {
+    await db.run('ALTER TABLE prenotazioni ADD COLUMN genitore_di TEXT');
   }
   if (!colonnePrenotazioni.some(colonna => colonna.name === 'updated_at')) {
     await db.run('ALTER TABLE prenotazioni ADD COLUMN updated_at DATETIME');
@@ -370,6 +377,7 @@ async function initializePostgresDatabase() {
       nome_prenotante TEXT NOT NULL,
       email_prenotante TEXT NOT NULL,
       branca_riferimento TEXT,
+      genitore_di TEXT,
       data_prenotazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       stato TEXT DEFAULT 'attiva',
       note TEXT,
@@ -403,6 +411,7 @@ async function initializePostgresDatabase() {
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS archiviata INTEGER DEFAULT 0;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS data_archiviazione TIMESTAMP;
     ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS metodo_pagamento TEXT DEFAULT 'in_sede';
+    ALTER TABLE prenotazioni ADD COLUMN IF NOT EXISTS genitore_di TEXT;
     ALTER TABLE dettagli_prenotazioni ADD COLUMN IF NOT EXISTS acquistato INTEGER DEFAULT 0;
   `);
   await db.run(

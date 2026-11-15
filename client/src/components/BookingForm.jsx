@@ -7,6 +7,7 @@ export default function BookingForm({ items, onSubmit, submitted }) {
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [brancaRiferimento, setBrancaRiferimento] = useState('')
+  const [genitoreDi, setGenitoreDi] = useState('')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [emailError, setEmailError] = useState('')
@@ -32,11 +33,13 @@ export default function BookingForm({ items, onSubmit, submitted }) {
         nome_prenotante: nome,
         email_prenotante: trimmedEmail,
         branca_riferimento: brancaRiferimento,
+        genitore_di: genitoreDi.trim(),
         note
       })
       setNome('')
       setEmail('')
       setBrancaRiferimento('')
+      setGenitoreDi('')
       setNote('')
     } finally {
       setLoading(false)
@@ -59,6 +62,17 @@ export default function BookingForm({ items, onSubmit, submitted }) {
           onChange={(e) => setNome(e.target.value)}
           required
           placeholder="Es. Marco Rossi"
+        />
+      </div>
+
+      <div className="form-group">
+        <label htmlFor="genitore-di">Genitore di: (opzionale):</label>
+        <input
+          id="genitore-di"
+          type="text"
+          value={genitoreDi}
+          onChange={(e) => setGenitoreDi(e.target.value)}
+          placeholder="Nome e cognome del figlio/a"
         />
       </div>
 

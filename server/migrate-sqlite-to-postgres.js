@@ -13,8 +13,8 @@ const sqlitePath = path.join(__dirname, 'database', 'ordini.db');
 const { Pool } = pg;
 
 const tables = {
-  prodotti: ['id', 'nome', 'tipologia', 'branca', 'taglia', 'specialita', 'immagine', 'guida_taglie_url', 'quantita_magazzino', 'prezzo_vendita', 'costo_acquisto', 'usato', 'mostra_home', 'created_at', 'updated_at'],
-  prenotazioni: ['id', 'nome_prenotante', 'email_prenotante', 'branca_riferimento', 'data_prenotazione', 'stato', 'note', 'archiviata', 'data_archiviazione', 'metodo_pagamento', 'created_at', 'updated_at'],
+  prodotti: ['id', 'nome', 'tipologia', 'branca', 'taglia', 'specialita', 'immagine', 'guida_taglie_url', 'quantita_magazzino', 'prezzo_vendita', 'costo_acquisto', 'usato', 'non_a_catalogo_scouting', 'mostra_home', 'created_at', 'updated_at'],
+  prenotazioni: ['id', 'nome_prenotante', 'email_prenotante', 'branca_riferimento', 'genitore_di', 'data_prenotazione', 'stato', 'note', 'archiviata', 'data_archiviazione', 'metodo_pagamento', 'created_at', 'updated_at'],
   dettagli_prenotazioni: ['id', 'prenotazione_id', 'prodotto_id', 'quantita', 'prezzo_unitario', 'specialita', 'acquistato', 'stato', 'pagamento_registrato'],
   configurazione: ['chiave', 'valore', 'updated_at'],
   admin_users: ['id', 'nome', 'email', 'password_hash', 'ruolo', 'branche', 'created_at'],

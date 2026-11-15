@@ -68,6 +68,17 @@ Per suggerire una feature:
   applicabili alle varianti tramite **Modifica testata**. La scelta delle
   branche occupa una riga orizzontale con ritorno a capo; URL e prezzi sono
   affiancati per coppie, mentre su mobile i campi si dispongono in colonna.
+  Ogni articolo ha una scheda testata con nome, immagine, tipologia, branche,
+  prezzi, condizione e visibilità. Sotto, una tabella separata mostra soltanto
+  taglia, quantità e azioni delle varianti, senza duplicare i dati comuni.
+- Il flag di testata **Non a catalogo scouting** limita la prenotazione
+  alla giacenza disponibile, come per gli articoli usati: a zero o sotto
+  zero le varianti non sono mostrate nel catalogo pubblico. Una giacenza
+  vuota mantiene il significato esistente di disponibilita illimitata.
+  Il server verifica le quantita nella transazione di prenotazione, anche
+  per righe duplicate e richieste concorrenti, e durante le modifiche.
+  Questi articoli compaiono nel riepilogo del materiale richiesto, ma non
+  sono riordinati dall'azione di acquisto. Il flag non riattiva sincronizzazioni esterne.
   Il vecchio campo
   `prezzo` viene migrato automaticamente nei due nuovi campi e poi rimosso,
   sia su SQLite sia su PostgreSQL. I successivi avvii non sovrascrivono i valori.
@@ -130,8 +141,13 @@ Per suggerire una feature:
   una mail a ogni account capo unità con la branca corrispondente (anche per
   le denominazioni storiche). La mail contiene prenotante, articoli, taglie,
   quantità, totale da pagare e note. Non attende pagamento o ricezione articoli.
-  Il formato HTML usa stili inline e tabelle compatibili con i client email:
-  intestazione, dati del prenotante, articoli e totale evidenziato. Le note
+  Tutte le email (conferma cliente, notifica admin, capi unità, cambi stato,
+  articoli ordinati e riepilogo di chiusura) condividono lo stesso layout:
+  intestazione blu, scheda bianca da 640 px, caratteri, tabelle, totali e
+  piè di pagina uniformi, con stili inline compatibili con i client email.
+  Layout e componenti sono centralizzati nel servizio email per evitare
+  differenze tra notifiche. Ogni messaggio include anche il testo semplice.
+  Le note
   compaiono solo se presenti; rimane disponibile la versione testuale.
   Prenotazione e notifiche ai capi sono salvate nella stessa transazione;
   gli errori SMTP vengono ritentati dalla coda esistente. Gli indirizzi sono
@@ -172,11 +188,52 @@ Per suggerire una feature:
   Lo stato Non pagato è rimosso: le righe preesistenti diventano Prenotate
   senza pagamento registrato e le relative notifiche non inviate sono rimosse.
   Lo storico archiviato rimane consultabile, ma **Archivia tutto** è rimosso.
-  Gli stati non archiviano automaticamente prenotazioni né modificano
-  giacenze. L'azione preesistente **Da acquistare** mantiene la gestione
-  giacenze e imposta Ordinato, limitandosi alle righe Prenotate o Pagate.
+  Gli stati non archiviano automaticamente prenotazioni.
+  Passare a Ordinato sposta il fabbisogno dal magazzino al fornitore;
+  riaprire una riga acquistata come Prenotata/Pagata la riserva nuovamente.
   La modifica della prenotazione conserva identità, stato e pagamento delle
   righe esistenti; le righe nuove iniziano come Prenotate.
+
+#### Materiale da magazzino e da acquistare
+
+- **Da acquistare** riepiloga tutte le varianti richieste nelle prenotazioni
+  attive: quantita richieste, copertura da magazzino, mancanti da ordinare,
+  pezzi ordinati in attesa di arrivo, ricevuti e non disponibili.
+  Include usato e fuori catalogo, acquistabili soltanto da magazzino.
+  Filtri e selezione globale riguardano le righe visibili; i dettagli
+  mostrano l'assegnazione per cliente e branca.
+- La giacenza in anagrafica resta **netta delle prenotazioni**, come prima:
+  il checkout la scala subito e puo renderla negativa per articoli a catalogo.
+  La copertura delle richieste ancora Prenotate/Pagate e non acquistate e
+  `min(richieste, max(0, giacenza_netta + richieste))`.
+  Da Gestione Prodotti, **Rettifica giacenza** registra i pezzi fisicamente
+  presenti e ricalcola la giacenza netta sottraendo le prenotazioni ancora da
+  evadere; per esempio, zero pezzi fisici e una prenotazione producono una
+  giacenza netta di -1 e un pezzo da ordinare. La rettifica non modifica le
+  prenotazioni.
+  Le righe ricevono copertura in ordine di data prenotazione, poi ID
+  prenotazione e ID riga, senza priorita ai pagamenti.
+  Una giacenza vuota non limita il checkout, ma nel riepilogo non costituisce
+  disponibilita fisica: tutte le richieste sono mancanti.
+- **Prepara da magazzino** segna Ricevuti soltanto i pezzi coperti e accoda
+  la normale email al cliente. **Ordina mancanti** segna Ordinati soltanto
+  i pezzi scoperti, escludendo usato e fuori catalogo, e accoda il riepilogo
+  ai capi con i soli importi di questi pezzi. Il costo dei mancanti esclude
+  materiale gia ordinato o coperto da magazzino.
+  Se necessario una riga viene divisa, conservando prodotto, specialita,
+  prezzo concordato e pagamento. Non cambia il totale della prenotazione.
+- Ordinare non carica merce fisica: rimuove soltanto la prenotazione dei
+  pezzi mancanti dalla giacenza netta e imposta `acquistato = 1`.
+  **Registra arrivo fornitore** passa da Ordinato a Ricevuto e avvisa i
+  clienti; i pezzi sono gia destinati a loro e non diventano scorta libera.
+  Tutte le operazioni ricalcolano le quantita nella transazione e non
+  duplicano cambi stato o notifiche se ripetute senza nuovi fabbisogni.
+- Le prenotazioni archiviate non compaiono. Le righe Non disponibili e
+  quelle archiviate mantengono le precedenti riserve di magazzino: nessuno
+  svincolo automatico o rettifica retroattiva delle giacenze storiche.
+  La nuova pagina non ricostruisce inventari fisici da vecchi ordini:
+  eventuali errori storici vanno corretti con **Rettifica giacenza**
+  nell'anagrafica varianti.
 
 Per verificare API, permessi, pagamenti completi, transizioni, migrazioni,
 conservazione degli stati durante le modifiche e retry delle notifiche:

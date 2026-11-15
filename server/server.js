@@ -6,8 +6,10 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, getDatabase, closeDatabase, withTransaction } from './database.js';
-import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch, assertBookingAccess, queueLeaderBookingNotifications, queueOrderedNotifications, deleteBookingItems } from './bookingWorkflow.js';
+import { registerBookingWorkflow, deliverStatusNotifications, normalizeBranch, assertBookingAccess, queueLeaderBookingNotifications, deleteBookingItems } from './bookingWorkflow.js';
 import { initializeEmailService, sendBookingEmail, sendAdminNotification, sendBrancaSummaryEmail } from './emailService.js';
+import { getMaterialOverview, processMaterial } from './procurement.js';
+import { generateMaterialCSV, generateMaterialXLSX, generateExportFilename, splitDistinctiveMaterials } from './exportService.js';
  
 
 dotenv.config();
@@ -32,13 +34,13 @@ app.get('/api/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
     let prodotti = await db.all(`SELECT id, nome, tipologia, branca, taglia, specialita, immagine,
-      guida_taglie_url, quantita_magazzino, prezzo_vendita, usato, mostra_home
+      guida_taglie_url, quantita_magazzino, prezzo_vendita, usato, non_a_catalogo_scouting, mostra_home
       FROM prodotti WHERE mostra_home = 1 ORDER BY branca, tipologia`);
     // NASCONDE AUTOMATICAMENTE I PEZZI USATI CON GIACENZA 0 O INFERIORE
     prodotti = prodotti.filter(p => {
       const isUsato = p.usato === 1 || p.usato === true;
       const isOut = p.quantita_magazzino !== null && p.quantita_magazzino !== undefined && Number(p.quantita_magazzino) <= 0;
-      return !(isUsato && isOut);
+      return !((isUsato || Number(p.non_a_catalogo_scouting) === 1) && isOut);
     });
     res.json(prodotti);
   } catch (error) {
@@ -74,10 +76,20 @@ app.get('/api/config/guida-taglie', async (req, res) => {
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
 
+function assertProductStock(product, quantity) {
+  const limited = Number(product.usato) === 1 || Number(product.non_a_catalogo_scouting) === 1;
+  if (limited && product.quantita_magazzino !== null && product.quantita_magazzino !== undefined &&
+      Number(product.quantita_magazzino) < quantity) {
+    const error = new Error(`Quantità non sufficiente per ${product.nome}. Disponibili: ${Math.max(0, Number(product.quantita_magazzino))}`);
+    error.status = 400;
+    throw error;
+  }
+}
+
 app.post('/api/prenotazioni', async (req, res) => {
   try {
     const db = getDatabase();
-    const { nome_prenotante, email_prenotante, branca_riferimento, note, items } = req.body;
+    const { nome_prenotante, email_prenotante, branca_riferimento, genitore_di, note, items } = req.body;
 
     // Verificare se le prenotazioni sono abilitate
     const config = await db.get(
@@ -93,44 +105,30 @@ app.post('/api/prenotazioni', async (req, res) => {
     if (!nome_prenotante || !email_prenotante || !branca_riferimento || !items || items.length === 0) {
       return res.status(400).json({ error: 'Dati mancanti' });
     }
+    if (genitore_di !== undefined && genitore_di !== null && typeof genitore_di !== 'string') {
+      return res.status(400).json({ error: 'Il campo Genitore di non è valido' });
+    }
 
     const trimmedEmail = String(email_prenotante).trim();
+    const trimmedGenitoreDi = String(genitore_di || '').trim() || null;
     if (!isValidEmail(trimmedEmail)) {
       return res.status(400).json({ error: 'Inserisci un indirizzo email valido' });
     }
 
-    // VALIDARE DISPONIBILITÀ PRIMA DI CREARE LA PRENOTAZIONE
-    for (const item of items) {
-      const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
-      
-      if (!prodotto) {
-        return res.status(404).json({ error: `Prodotto ${item.prodotto_id} non trovato` });
-      }
-
-      const isUsato = prodotto.usato === 1 || prodotto.usato === true;
-      // Per gli articoli USATI verifica la quantità di magazzino
-      // Per gli articoli NUOVI l'ordine è sempre consentito.
-      if (isUsato) {
-        if (prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
-          if (prodotto.quantita_magazzino <= 0) {
-            return res.status(400).json({ 
-              error: `${prodotto.nome} (Usato) non è più disponibile in magazzino` 
-            });
-          }
-          if (item.quantita > prodotto.quantita_magazzino) {
-            return res.status(400).json({ 
-              error: `Quantità usata non sufficiente per ${prodotto.nome}. Disponibili: ${prodotto.quantita_magazzino}` 
-            });
-          }
-        }
-      }
+    if (!Array.isArray(items) || items.some(item => !Number.isSafeInteger(item.prodotto_id) ||
+        !Number.isSafeInteger(item.quantita) || item.quantita <= 0)) {
+      return res.status(400).json({ error: 'Articoli o quantità non validi' });
     }
 
     const { bookingData, leaderEmailsQueued } = await withTransaction(async db => {
+      if (db.pool) {
+        await db.all(`SELECT id FROM prodotti WHERE id IN (${items.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`,
+          items.map(item => item.prodotto_id));
+      }
       const prenotazione_id = uuidv4();
       await db.run(
-        'INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, note) VALUES (?, ?, ?, ?, ?)',
-        [prenotazione_id, nome_prenotante, trimmedEmail, branca_riferimento, note || null]
+        'INSERT INTO prenotazioni (id, nome_prenotante, email_prenotante, branca_riferimento, genitore_di, note) VALUES (?, ?, ?, ?, ?, ?)',
+        [prenotazione_id, nome_prenotante, trimmedEmail, branca_riferimento, trimmedGenitoreDi, note || null]
       );
 
       for (const item of items) {
@@ -140,6 +138,7 @@ app.post('/api/prenotazioni', async (req, res) => {
           error.status = 404;
           throw error;
         }
+        assertProductStock(prodotto, item.quantita);
         await db.run(
           'INSERT INTO dettagli_prenotazioni (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita) VALUES (?, ?, ?, ?, ?)',
           [prenotazione_id, item.prodotto_id, item.quantita, prodotto.prezzo_vendita, item.specialita || null]
@@ -164,6 +163,7 @@ app.post('/api/prenotazioni', async (req, res) => {
         nome_prenotante,
         email_prenotante: trimmedEmail,
         branca_riferimento,
+        genitore_di: trimmedGenitoreDi,
         data_prenotazione: new Date().toISOString(),
         note,
         items: dettagli.map(d => ({
@@ -212,6 +212,7 @@ app.post('/api/admin/prodotti', async (req, res) => {
   try {
     const db = getDatabase();
     const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home } = req.body;
+    const nonACatalogo = [true, 1, '1'].includes(req.body.non_a_catalogo_scouting) ? 1 : 0;
     if (!isValidPrice(prezzo_vendita) || !isValidPrice(costo_acquisto)) {
       return res.status(400).json({ error: 'Inserisci prezzo di vendita e costo di acquisto validi e non negativi' });
     }
@@ -221,9 +222,9 @@ app.post('/api/admin/prodotti', async (req, res) => {
       ? null
       : Number(quantita_magazzino);
     const result = await db.run(
-      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
+      `INSERT INTO prodotti (nome, tipologia, branca, taglia, specialita, guida_taglie_url, immagine, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, non_a_catalogo_scouting, mostra_home)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, nonACatalogo, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1]
     );
 
     if (String(guida_taglie_url || '').trim()) {
@@ -241,6 +242,10 @@ app.put('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
     const { nome, tipologia, branca, taglia, specialita, immagine, guida_taglie_url, quantita_magazzino, prezzo_vendita, costo_acquisto, usato, mostra_home } = req.body;
+    const existing = await db.get('SELECT non_a_catalogo_scouting FROM prodotti WHERE id = ?', [req.params.id]);
+    if (!existing) return res.status(404).json({ error: 'Prodotto non trovato' });
+    const nonACatalogo = req.body.non_a_catalogo_scouting === undefined ? existing.non_a_catalogo_scouting
+      : [true, 1, '1'].includes(req.body.non_a_catalogo_scouting) ? 1 : 0;
     if (!isValidPrice(prezzo_vendita) || !isValidPrice(costo_acquisto)) {
       return res.status(400).json({ error: 'Inserisci prezzo di vendita e costo di acquisto validi e non negativi' });
     }
@@ -250,9 +255,9 @@ app.put('/api/admin/prodotti/:id', async (req, res) => {
       ? null
       : Number(quantita_magazzino);
     await db.run(
-      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo_vendita = ?, costo_acquisto = ?, usato = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
+      `UPDATE prodotti SET nome = ?, tipologia = ?, branca = ?, taglia = ?, specialita = ?, guida_taglie_url = ?, immagine = ?, quantita_magazzino = ?, prezzo_vendita = ?, costo_acquisto = ?, usato = ?, non_a_catalogo_scouting = ?, mostra_home = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
+      [nome, tipologia, brancaValue, taglia || null, specialita || null, guida_taglie_url || null, immagine || null, quantita, Number(prezzo_vendita), Number(costo_acquisto), usato ? 1 : 0, nonACatalogo, mostra_home === false || mostra_home === 0 || mostra_home === '0' ? 0 : 1, req.params.id]
     );
 
     await db.run('UPDATE prodotti SET guida_taglie_url = ? WHERE nome = ?', [String(guida_taglie_url || '').trim() || null, nome]);
@@ -264,6 +269,52 @@ app.put('/api/admin/prodotti/:id', async (req, res) => {
   }
 });
 
+app.put('/api/admin/prodotti/:id/giacenza', async (req, res) => {
+  const quantitaFisica = req.body?.quantita_fisica;
+  if (!Number.isSafeInteger(quantitaFisica) || quantitaFisica < 0) {
+    return res.status(400).json({ error: 'Inserisci una quantità fisica intera e non negativa' });
+  }
+
+  try {
+    const result = await withTransaction(async db => {
+      const product = await db.get(`SELECT id FROM prodotti WHERE id = ? ${db.pool ? 'FOR UPDATE' : ''}`,
+        [req.params.id]);
+      if (!product) {
+        const error = new Error('Prodotto non trovato');
+        error.status = 404;
+        throw error;
+      }
+
+      const reserved = await db.get(
+        `SELECT COALESCE(SUM(dp.quantita), 0) AS quantita_prenotata
+         FROM dettagli_prenotazioni dp
+         JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
+         WHERE dp.prodotto_id = ? AND dp.stato IN ('prenotato', 'pagato')
+           AND COALESCE(dp.acquistato, 0) = 0 AND COALESCE(pr.archiviata, 0) = 0`,
+        [req.params.id]
+      );
+      const quantitaPrenotata = Number(reserved.quantita_prenotata);
+      const quantitaMagazzino = quantitaFisica - quantitaPrenotata;
+      if (!Number.isSafeInteger(quantitaPrenotata) || !Number.isSafeInteger(quantitaMagazzino)) {
+        const error = new Error('La quantità risultante non è valida');
+        error.status = 400;
+        throw error;
+      }
+
+      await db.run(
+        'UPDATE prodotti SET quantita_magazzino = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [quantitaMagazzino, req.params.id]
+      );
+      return { quantita_fisica: quantitaFisica, quantita_prenotata: quantitaPrenotata,
+        quantita_magazzino: quantitaMagazzino };
+    });
+    res.json({ message: 'Giacenza corretta', ...result });
+  } catch (error) {
+    console.error('Errore rettifica giacenza:', error);
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore rettifica giacenza' });
+  }
+});
+
 app.delete('/api/admin/prodotti/:id', async (req, res) => {
   try {
     const db = getDatabase();
@@ -271,6 +322,11 @@ app.delete('/api/admin/prodotti/:id', async (req, res) => {
     res.json({ message: 'Prodotto eliminato' });
   } catch (error) {
     console.error('Errore eliminazione prodotto:', error);
+    if (error.code === '23503' || error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || /foreign key constraint failed/i.test(error.message || '')) {
+      return res.status(409).json({
+        error: 'Questo articolo è presente in una o più prenotazioni e non può essere eliminato. Per rimuoverlo dal catalogo, modifica l’articolo e disattiva “Visibile nella home”.'
+      });
+    }
     res.status(500).json({ error: 'Errore eliminazione prodotto' });
   }
 });
@@ -326,7 +382,7 @@ app.get('/api/admin/prenotazioni/:id', async (req, res) => {
 app.put('/api/admin/prenotazioni/:id', async (req, res) => {
   try {
     await withTransaction(async db => {
-      const { nome_prenotante, email_prenotante, branca_riferimento, note, items } = req.body;
+      const { nome_prenotante, email_prenotante, branca_riferimento, genitore_di, note, items } = req.body;
       const bookingId = req.params.id;
 
       const existing = await db.get(`SELECT * FROM prenotazioni WHERE id = ? ${db.pool ? 'FOR UPDATE' : ''}`, [bookingId]);
@@ -343,15 +399,21 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
         error.status = 400;
         throw error;
       }
+      if (genitore_di !== undefined && genitore_di !== null && typeof genitore_di !== 'string') {
+        const error = new Error('Il campo Genitore di non è valido');
+        error.status = 400;
+        throw error;
+      }
 
       await db.run(
         `UPDATE prenotazioni
-         SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+         SET nome_prenotante = ?, email_prenotante = ?, branca_riferimento = ?, genitore_di = ?, note = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
           nome_prenotante || existing.nome_prenotante,
           trimmedEmail,
           branca_riferimento || existing.branca_riferimento,
+          genitore_di !== undefined ? String(genitore_di || '').trim() || null : existing.genitore_di,
           note !== undefined ? note : existing.note,
           bookingId
         ]
@@ -393,7 +455,7 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
         }
 
         for (const { item, oldItem } of resolvedItems) {
-          const prodotto = await db.get('SELECT * FROM prodotti WHERE id = ?', [item.prodotto_id]);
+          const prodotto = await db.get(`SELECT * FROM prodotti WHERE id = ? ${db.pool ? 'FOR UPDATE' : ''}`, [item.prodotto_id]);
           const prezzoUnitario = Number(req.user.ruolo === 'capo_unita'
             ? oldItem?.prezzo_unitario ?? prodotto?.prezzo_vendita
             : item.prezzo_unitario ?? prodotto?.prezzo_vendita);
@@ -416,6 +478,7 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
           }
 
           if (Number(oldItem?.acquistato || 0) !== 1 && prodotto.quantita_magazzino !== null && prodotto.quantita_magazzino !== undefined) {
+            assertProductStock(prodotto, item.quantita);
             const nuovaQty = prodotto.quantita_magazzino - item.quantita;
             await db.run(
               'UPDATE prodotti SET quantita_magazzino = ? WHERE id = ?',
@@ -432,123 +495,59 @@ app.put('/api/admin/prenotazioni/:id', async (req, res) => {
   }
 });
 
-// LISTA ARTICOLI NUOVI DA ACQUISTARE
+// Materiale richiesto, copertura da magazzino e ordini al fornitore.
 app.get('/api/admin/da-acquistare', async (req, res) => {
   try {
-    const db = getDatabase();
-    const soloRichiesti = req.query.soloRichiesti === 'true';
-
-    let query = `
-      SELECT p.*,
-        COALESCE((
-          SELECT SUM(dp.quantita)
-          FROM dettagli_prenotazioni dp
-          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-              WHERE dp.prodotto_id = p.id AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-        ), 0) as quantita_prenotata
-      FROM prodotti p
-      WHERE (p.usato = 0 OR p.usato IS NULL)
-    `;
-
-    if (soloRichiesti) {
-      query += `
-        AND COALESCE((
-          SELECT SUM(dp.quantita)
-          FROM dettagli_prenotazioni dp
-          JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-          WHERE dp.prodotto_id = p.id AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-        ), 0) > 0
-      `;
-    } else {
-      query += `
-        AND (
-          p.quantita_magazzino = 0 
-          OR p.quantita_magazzino < 0
-          OR COALESCE((
-            SELECT SUM(dp.quantita)
-            FROM dettagli_prenotazioni dp
-            JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-            WHERE dp.prodotto_id = p.id AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL) AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-          ), 0) > COALESCE(p.quantita_magazzino, 999999)
-        )
-      `;
-    }
-
-    query += ` ORDER BY p.branca, p.nome`;
-
-    const prodotti = await db.all(query);
-    res.json(prodotti);
+    res.json(await getMaterialOverview());
   } catch (error) {
     console.error('Errore recupero lista da acquistare:', error);
     res.status(500).json({ error: 'Errore recupero lista da acquistare' });
   }
 });
 
-app.post('/api/admin/da-acquistare/acquista', async (req, res) => {
-  const productIds = Array.isArray(req.body?.productIds)
-    ? [...new Set(req.body.productIds.map(Number).filter(Number.isInteger))]
-    : [];
-
-  if (productIds.length === 0) {
-    return res.status(400).json({ error: 'Seleziona almeno un articolo' });
-  }
-
+// Export materiale da acquistare come CSV o XLSX
+app.post('/api/admin/da-acquistare/export/:format', async (req, res) => {
   try {
-    const result = await withTransaction(async db => {
-      let acquistati = 0;
-      if (db.pool) {
-        await db.all(`SELECT id FROM prenotazioni WHERE id IN (
-          SELECT prenotazione_id FROM dettagli_prenotazioni WHERE prodotto_id IN (${productIds.map(() => '?').join(',')})
-        ) ORDER BY id FOR UPDATE`, productIds);
-      }
+    const { filterView, columns } = req.body;
+    const format = req.params.format === 'xlsx' ? 'xlsx' : 'csv';
+    const materials = await getMaterialOverview();
+    const exportMaterials = format === 'xlsx' ? splitDistinctiveMaterials(materials) : materials;
+    
+    // Applica lo stesso filtro del frontend
+    const filteredMaterials = exportMaterials.filter(item =>
+      filterView === 'tutti' ||
+      (filterView === 'bloccati' ? item.non_acquistabili > 0 : item[filterView] > 0)
+    );
 
-      const rows = await db.all(
-        `SELECT dp.*, p.nome, p.taglia, p.costo_acquisto, pr.branca_riferimento
-         FROM dettagli_prenotazioni dp
-         JOIN prenotazioni pr ON dp.prenotazione_id = pr.id
-         JOIN prodotti p ON p.id = dp.prodotto_id
-         WHERE dp.prodotto_id IN (${productIds.map(() => '?').join(',')})
-           AND dp.stato IN ('prenotato', 'pagato') AND (dp.acquistato = 0 OR dp.acquistato IS NULL)
-           AND (pr.archiviata = 0 OR pr.archiviata IS NULL)
-         ORDER BY dp.id ${db.pool ? 'FOR UPDATE OF dp' : ''}`,
-        productIds
-      );
-      for (const productId of productIds) {
-        const quantita = rows.filter(row => row.prodotto_id === productId)
-          .reduce((sum, row) => sum + Number(row.quantita), 0);
+    let fileContent, contentType, filename;
 
-        if (quantita > 0) {
-          await db.run(
-            `UPDATE prodotti
-             SET quantita_magazzino = CASE
-               WHEN quantita_magazzino < 0 THEN 0
-               ELSE COALESCE(quantita_magazzino, 0) + ?
-             END
-             WHERE id = ? AND quantita_magazzino IS NOT NULL`,
-            [quantita, productId]
-          );
-          const result = await db.run(
-            `UPDATE dettagli_prenotazioni SET acquistato = 1, stato = 'ordinato'
-             WHERE prodotto_id = ? AND stato IN ('prenotato', 'pagato') AND (acquistato = 0 OR acquistato IS NULL)
-               AND prenotazione_id IN (
-                 SELECT id FROM prenotazioni WHERE archiviata = 0 OR archiviata IS NULL
-               )`,
-            [productId]
-          );
-          acquistati += result.changes || 0;
-        }
-      }
+    if (format === 'xlsx') {
+      fileContent = generateMaterialXLSX(filteredMaterials, filterView, columns);
+      contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      filename = generateExportFilename(filterView, 'xlsx');
+    } else {
+      fileContent = generateMaterialCSV(filteredMaterials, filterView, columns);
+      contentType = 'text/csv; charset=utf-8';
+      filename = generateExportFilename(filterView, 'csv');
+    }
 
-      for (const bookingId of new Set(rows.map(row => row.prenotazione_id))) {
-        await db.run('UPDATE prenotazioni SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', [bookingId]);
-      }
-      const emailInCoda = await queueOrderedNotifications(db, rows);
-      return { acquistati, emailInCoda };
-    });
-    res.json({ message: 'Articoli segnati come acquistati', ...result });
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.send(fileContent);
   } catch (error) {
-    console.error('Errore registrazione acquisto:', error);
-    res.status(500).json({ error: 'Errore registrazione acquisto' });
+    console.error('Errore export materiale:', error);
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore export materiale' });
+  }
+});
+
+app.post('/api/admin/da-acquistare/:azione', async (req, res) => {
+  try {
+    res.json(await processMaterial(req.user, req.body?.productIds, req.params.azione));
+  } catch (error) {
+    console.error('Errore gestione materiale:', error);
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Errore gestione materiale' });
   }
 });
 

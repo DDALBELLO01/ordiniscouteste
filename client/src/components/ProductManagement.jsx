@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import axios from 'axios'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
+import { PRODUCT_TYPES } from '../productTypes'
 
 const parseBranches = (value) => Array.isArray(value)
   ? value
@@ -40,7 +41,11 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
         </div>
         <div className="form-group">
           <label>Tipologia:</label>
-          <input type="text" value={formData.tipologia} onChange={(e) => setFormData({...formData, tipologia: e.target.value})} required />
+          <select value={formData.tipologia} onChange={(e) => setFormData({...formData, tipologia: e.target.value})} required>
+            <option value="">Seleziona la tipologia</option>
+            {!PRODUCT_TYPES.includes(formData.tipologia) && formData.tipologia && <option value={formData.tipologia}>{formData.tipologia}</option>}
+            {PRODUCT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+          </select>
         </div>
       </div>
       <div className="form-group product-branches">
@@ -64,8 +69,8 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
             <input type="text" value={formData.taglia} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, L, XL o 6-8 anni" />
           </div>
           <div className="form-group">
-            <label>Quantità Magazzino:</label>
-            <input type="number" min="0" value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
+            <label>{editingId ? 'Disponibile netto (dopo prenotazioni):' : 'Quantità iniziale in magazzino:'}</label>
+            <input type="number" min={editingId ? undefined : 0} value={formData.quantita_magazzino} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
           </div>
         </div>
       )}
@@ -80,6 +85,10 @@ function ProductForm({ formRef, formData, setFormData, branches, editingId, hand
         </div>
       </div>
       <div className="product-options">
+        <div className="product-option">
+          <input type="checkbox" id={`non-catalogo-${editingId || 'nuovo'}`} checked={!!formData.non_a_catalogo_scouting} onChange={(e) => setFormData({...formData, non_a_catalogo_scouting: e.target.checked})} />
+          <label htmlFor={`non-catalogo-${editingId || 'nuovo'}`}>Non a catalogo scouting</label>
+        </div>
         <div className="product-option">
           <input type="checkbox" id={`usato-${editingId || 'nuovo'}`} checked={formData.usato} onChange={(e) => setFormData({...formData, usato: e.target.checked})} />
           <label htmlFor={`usato-${editingId || 'nuovo'}`}>Articolo usato</label>
@@ -106,10 +115,11 @@ function ProductVariantForm({ formRef, formData, setFormData, editingId, handleS
           <input type="text" value={formData.taglia || ''} onChange={(e) => setFormData({...formData, taglia: e.target.value})} placeholder="Es. S, M, 6-8 anni" />
         </div>
         <div className="form-group">
-          <label>Quantità magazzino:</label>
-          <input type="number" min="0" value={formData.quantita_magazzino ?? ''} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
+          <label>Disponibile netto (dopo prenotazioni):</label>
+          <input type="number" value={formData.quantita_magazzino ?? ''} onChange={(e) => setFormData({...formData, quantita_magazzino: e.target.value === '' ? '' : parseInt(e.target.value, 10)})} placeholder="Vuoto = illimitato" />
         </div>
       </div>
+      <small className="material-note">Per impostare i pezzi fisicamente presenti, usa “Rettifica giacenza” nella tabella.</small>
       <div className="form-actions">
         <button type="submit" className="btn-primary">Aggiorna riga</button>
         <button type="button" className="btn-secondary" onClick={resetForm}>Annulla</button>
@@ -127,11 +137,15 @@ export default function ProductManagement() {
   const [editingGroup, setEditingGroup] = useState(null)
   const formRef = useRef(null)
   const [editTarget, setEditTarget] = useState(null)
+  const [correctingStockId, setCorrectingStockId] = useState(null)
+  const [physicalStock, setPhysicalStock] = useState('')
+  const [savingStockId, setSavingStockId] = useState(null)
   const [filters, setFilters] = useState({
     search: '',
     tipologia: '',
     branca: '',
     taglia: '',
+
     usato: '',
     mostraHome: '',
     giacenza: ''
@@ -147,6 +161,7 @@ export default function ProductManagement() {
     prezzo_vendita: 0,
     costo_acquisto: 0,
     usato: false,
+    non_a_catalogo_scouting: false,
     mostra_home: true,
   })
 
@@ -170,6 +185,40 @@ export default function ProductManagement() {
     } catch (error) {
       console.error('Errore caricamento:', error)
       setLoading(false)
+    }
+  }
+
+  const handleStockCorrection = async (event, product) => {
+    event.preventDefault()
+    const quantity = Number(physicalStock)
+    if (physicalStock === '' || !Number.isSafeInteger(quantity) || quantity < 0) {
+      showMessage('Inserisci una quantità fisica intera e non negativa', 'Quantità non valida')
+      return
+    }
+    if (!await showConfirm(
+      `Confermi che in magazzino ci sono fisicamente ${quantity} pezzi di ${product.nome}? Le prenotazioni ancora da evadere verranno sottratte dalla giacenza.`,
+      'Rettifica giacenza'
+    )) return
+
+    setSavingStockId(product.id)
+    try {
+      const response = await axios.put(`/api/admin/prodotti/${product.id}/giacenza`, {
+        quantita_fisica: quantity
+      })
+      setProducts(current => current.map(item => item.id === product.id
+        ? { ...item, quantita_magazzino: response.data.quantita_magazzino }
+        : item))
+      setCorrectingStockId(null)
+      setPhysicalStock('')
+      showMessage(
+        `Giacenza aggiornata: ${response.data.quantita_magazzino} disponibili dopo ${response.data.quantita_prenotata} prenotazioni pendenti.`,
+        'Giacenza aggiornata'
+      )
+    } catch (error) {
+      console.error('Errore rettifica giacenza:', error)
+      showMessage(error.response?.data?.error || 'Errore rettifica giacenza', 'Errore')
+    } finally {
+      setSavingStockId(null)
     }
   }
 
@@ -246,6 +295,7 @@ export default function ProductManagement() {
       prezzo_vendita: 0,
       costo_acquisto: 0,
       usato: false,
+      non_a_catalogo_scouting: false,
       mostra_home: true,
     })
     setEditingId(null)
@@ -273,7 +323,7 @@ export default function ProductManagement() {
   }
 
   const filterOptions = useMemo(() => ({
-    tipologie: [...new Set(products.map(product => product.tipologia).filter(Boolean))].sort(),
+    tipologie: PRODUCT_TYPES,
     branche: [...new Set(products.flatMap(product => parseBranches(product.branca)))].sort(),
     taglie: [...new Set(products.map(product => product.taglia).filter(Boolean))].sort()
   }), [products])
@@ -287,7 +337,7 @@ export default function ProductManagement() {
 
     const isUsato = product.usato === 1 || product.usato === true
     const isZeroStock = product.quantita_magazzino !== null && product.quantita_magazzino !== undefined && Number(product.quantita_magazzino) <= 0
-    const isDaAcquistare = !isUsato && isZeroStock
+    const isDaAcquistare = !isUsato && !product.non_a_catalogo_scouting && isZeroStock
 
     let matchesGiacenza = true
     if (filters.giacenza === 'da_acquistare') {
@@ -333,7 +383,7 @@ export default function ProductManagement() {
   const productGroups = useMemo(() => {
     const groups = new Map()
     sortedProducts.forEach(product => {
-      const key = [product.nome, product.tipologia, product.branca, product.immagine || '', product.guida_taglie_url || '', product.usato, product.mostra_home].join('|')
+      const key = [product.nome, product.tipologia, product.branca, product.immagine || '', product.guida_taglie_url || '', product.usato, product.non_a_catalogo_scouting, product.mostra_home].join('|')
       if (!groups.has(key)) groups.set(key, { ...product, variants: [] })
       groups.get(key).variants.push(product)
     })
@@ -424,55 +474,81 @@ export default function ProductManagement() {
 
       <div className="catalog-summary">{filteredProducts.length} di {products.length} articoli</div>
 
-      <div className="products-table">
-        <table>
-          <thead>
-            <tr>
-              <th>Articolo</th><th>Tipologia</th><th>Branche</th><th>Taglia</th><th>Immagine</th>
-              <th>Quantità</th><th>Prezzo di vendita</th><th>Costo di acquisto</th><th>Usato</th><th>Home</th><th>Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="product-cards">
             {productGroups.map(group => (
-              <Fragment key={`${group.nome}-${group.branca}-${group.immagine || ''}`}>
-                <tr className="product-group-header">
-                  <td colSpan="11">
-                    <strong>{group.nome}</strong>
-                    <span>{group.tipologia}</span>
-                    <span>Branche: {parseBranches(group.branca).join(', ')}</span>
-                    <span>Prezzo di vendita: {[...new Set(group.variants.map(variant => `€ ${Number(variant.prezzo_vendita).toFixed(2)}`))].join(', ')}</span>
-                    <span>Costo di acquisto: {[...new Set(group.variants.map(variant => `€ ${Number(variant.costo_acquisto).toFixed(2)}`))].join(', ')}</span>
-                    <span>{group.usato ? 'Usato' : 'Nuovo'}</span>
-                    <span>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</span>
+              <section className="product-card" key={group.id} aria-label={group.nome}>
+                <div className="product-card-header">
+                  <div className="product-card-title">
                     {group.immagine && <img className="product-thumb" src={group.immagine} alt="" />}
+                    <h4>{group.nome}</h4>
                     <button type="button" className="btn-small btn-edit" onClick={() => handleEditGroup(group)}>✏️ Modifica testata</button>
-                  </td>
-                </tr>
-                {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && (
-                  <tr><td colSpan="11"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                  </div>
+                  <dl className="product-card-details">
+                    <div><dt>Tipologia</dt><dd>{group.tipologia}</dd></div>
+                    <div><dt>Branche</dt><dd>{parseBranches(group.branca).join(', ')}</dd></div>
+                    <div><dt>Prezzo di vendita</dt><dd>{[...new Set(group.variants.map(variant => `€ ${Number(variant.prezzo_vendita).toFixed(2)}`))].join(', ')}</dd></div>
+                    <div><dt>Costo di acquisto</dt><dd>{[...new Set(group.variants.map(variant => `€ ${Number(variant.costo_acquisto).toFixed(2)}`))].join(', ')}</dd></div>
+                    <div><dt>Condizione</dt><dd>{group.usato ? 'Usato' : 'Nuovo'}</dd></div>
+                    <div><dt>Non a catalogo scouting</dt><dd>{group.non_a_catalogo_scouting ? 'Sì' : 'No'}</dd></div>
+                    <div><dt>Home</dt><dd>{group.mostra_home === 0 ? 'Nascosto' : 'Visibile'}</dd></div>
+                  </dl>
+                </div>
+                {editingGroup && editingGroup.id === group.id && (
+                  <div ref={setEditTarget} className="inline-edit-target" />
                 )}
-                {editingGroup && editingGroup.nome === group.nome && editingGroup.branca === group.branca && editTarget && createPortal(
+                {editingGroup && editingGroup.id === group.id && editTarget && createPortal(
                   <ProductForm formRef={formRef} formData={formData} setFormData={setFormData} branches={branches} editingId={editingGroup.nome} handleSave={handleSave} resetForm={resetForm} groupEdit />,
                   editTarget
                 )}
+                <div className="products-table product-variants-table">
+                  <table aria-label={`Varianti di ${group.nome}`}>
+                    <thead><tr><th scope="col">Taglia</th><th scope="col">Quantità</th><th scope="col">Azioni</th></tr></thead>
+                    <tbody>
                 {group.variants.map(product => (
                   <Fragment key={product.id}>
                     <tr className="product-variant-row">
-                      <td></td><td></td><td></td>
                       <td>{product.taglia || 'Taglia unica'}</td>
-                      <td></td>
                       <td>{product.quantita_magazzino === null || product.quantita_magazzino === undefined ? '∞' : product.quantita_magazzino}</td>
-                      <td>€ {Number(product.prezzo_vendita).toFixed(2)}</td>
-                      <td>€ {Number(product.costo_acquisto).toFixed(2)}</td>
-                      <td></td><td></td>
-                      <td className="actions">
+                      <td><div className="actions">
+                        <button type="button" className="btn-small btn-secondary" onClick={() => {
+                          setCorrectingStockId(product.id)
+                          setPhysicalStock('')
+                        }}>📦 Rettifica giacenza</button>
                         <button className="btn-small btn-copy" onClick={() => handleDuplicate(product)}>📄 Duplica</button>
                         <button className="btn-small btn-edit" onClick={() => handleEdit(product)}>✏️ Modifica riga</button>
                         <button className="btn-small btn-delete" onClick={() => handleDelete(product.id)}>🗑️ Elimina</button>
-                      </td>
+                      </div></td>
                     </tr>
+                    {product.id === correctingStockId && (
+                      <tr><td colSpan="3">
+                        <form className="management-form variant-form" onSubmit={(event) => handleStockCorrection(event, product)}>
+                          <div className="form-group">
+                            <label htmlFor={`physical-stock-${product.id}`}>Pezzi fisicamente presenti:</label>
+                            <input
+                              id={`physical-stock-${product.id}`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={physicalStock}
+                              onChange={(event) => setPhysicalStock(event.target.value)}
+                              required
+                            />
+                          </div>
+                          <small className="material-note">Il sistema sottrarrà automaticamente le prenotazioni ancora da evadere.</small>
+                          <div className="form-actions">
+                            <button type="submit" className="btn-primary" disabled={savingStockId === product.id}>
+                              {savingStockId === product.id ? 'Aggiornamento...' : 'Conferma giacenza'}
+                            </button>
+                            <button type="button" className="btn-secondary" disabled={savingStockId === product.id} onClick={() => {
+                              setCorrectingStockId(null)
+                              setPhysicalStock('')
+                            }}>Annulla</button>
+                          </div>
+                        </form>
+                      </td></tr>
+                    )}
                     {product.id === editingId && (
-                      <tr><td colSpan="11"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
+                      <tr><td colSpan="3"><div ref={setEditTarget} className="inline-edit-target" /></td></tr>
                     )}
                     {product.id === editingId && editTarget && createPortal(
                       <ProductVariantForm formRef={formRef} formData={formData} setFormData={setFormData} editingId={editingId} handleSave={handleSave} resetForm={resetForm} />,
@@ -480,10 +556,11 @@ export default function ProductManagement() {
                     )}
                   </Fragment>
                 ))}
-              </Fragment>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             ))}
-          </tbody>
-        </table>
         {filteredProducts.length === 0 && <p className="empty-catalog">Nessun articolo corrisponde ai filtri selezionati.</p>}
       </div>
     </div>

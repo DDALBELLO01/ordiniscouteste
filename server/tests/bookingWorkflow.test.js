@@ -24,7 +24,7 @@ before(async () => {
   if (process.env.DB_HOST && process.env.WORKFLOW_TEST_POSTGRES !== '1') {
     throw new Error('Per i test PostgreSQL usa un database temporaneo e WORKFLOW_TEST_POSTGRES=1');
   }
-  process.env.ADMIN_EMAIL = 'admin@example.test';
+  process.env.ADMIN_USER = 'admin@example.test';
   process.env.ADMIN_PASSWORD = 'test-admin-password';
   directory = await mkdtemp(path.join(tmpdir(), 'booking-workflow-'));
   await initializeDatabase({ filename: path.join(directory, 'test.db') });
@@ -156,6 +156,23 @@ test('leader pays complete bookings while retaining fulfillment states', async (
   assert.equal(items[0].stato, 'ordinato');
   assert.equal(items[1].stato, 'pagato');
   assert.equal((await request('/api/admin/prenotazioni-capo/paga', { token: leaderToken, method: 'POST', body: { prenotazioneIds: ['a'] } })).status, 400);
+});
+
+test('leader can mark one paid article delivered without changing other lines', async () => {
+  const result = await request('/api/admin/prenotazioni-capo/consegna', {
+    token: leaderToken, method: 'POST', body: { ids: [2] }
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.aggiornati, 1);
+  assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 2')).stato, 'consegnato');
+  assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ordinato');
+
+  assert.equal((await request('/api/admin/prenotazioni-capo/consegna', {
+    token: leaderToken, method: 'POST', body: { ids: [3] }
+  })).status, 400);
+  assert.equal((await request('/api/admin/prenotazioni-capo/consegna', {
+    token: leaderToken, method: 'POST', body: { ids: [4] }
+  })).status, 403);
 });
 
 test('legacy branch names resolve to their assigned unit without broadening access', async () => {
@@ -377,19 +394,20 @@ test('checkout queues complete notifications only for matching leader accounts a
   }
 });
 
-test('legacy buying action records Ordered and respects unavailable items', async () => {
+test('buying action records only shortages and respects unavailable items', async () => {
   await updateItemStates(admin, [1], 'prenotato');
   await updateItemStates(admin, [2], 'non_disponibile');
   const list = await request('/api/admin/da-acquistare?soloRichiesti=true');
   assert.equal(list.status, 200);
-  assert.equal(list.data.some(item => item.id === 2), false);
+  assert.equal(list.data.find(item => item.id === 2).da_acquistare, 0);
   const before = new Set((await db.all('SELECT id FROM notifiche_stato')).map(row => row.id));
   const expected = await db.get(`SELECT SUM(dp.quantita * p.costo_acquisto) AS acquisto,
-    SUM(dp.quantita * dp.prezzo_unitario) AS vendita
+    SUM(dp.quantita * dp.prezzo_unitario) AS vendita, SUM(dp.quantita) AS quantita
     FROM dettagli_prenotazioni dp JOIN prodotti p ON p.id = dp.prodotto_id
     JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
     WHERE p.id IN (1, 2) AND dp.stato IN ('prenotato', 'pagato')
       AND COALESCE(dp.acquistato, 0) = 0 AND COALESCE(pr.archiviata, 0) = 0`);
+  await db.run('UPDATE prodotti SET quantita_magazzino = ? WHERE id = 1', [-Number(expected.quantita)]);
   const result = await request('/api/admin/da-acquistare/acquista', { method: 'POST', body: { productIds: [1, 2] } });
   assert.equal(result.status, 200);
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ordinato');
@@ -639,6 +657,274 @@ test('ordered summaries group each operation by branch, preserve both totals, re
   }
 });
 
+test('non-catalog products enforce stock atomically', async () => {
+  const product = { nome: 'Fuori catalogo', tipologia: 'Test', branca: ['Lupetti'], taglia: 'M',
+    quantita_magazzino: 2,
+    prezzo_vendita: 10, costo_acquisto: 5, non_a_catalogo_scouting: true, mostra_home: true };
+  const created = await request('/api/admin/prodotti', { method: 'POST', body: product });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  const saved = await db.get('SELECT * FROM prodotti WHERE id = ?', [id]);
+  assert.equal(saved.non_a_catalogo_scouting, 1);
+  const publicProduct = (await request('/api/prodotti', { token: null })).data.find(item => item.id === id);
+  assert.ok(!('descrizione' in publicProduct));
+  assert.equal(publicProduct.non_a_catalogo_scouting, 1);
+  assert.ok(!(await request('/api/admin/da-acquistare')).data.some(item => item.id === id));
+  const { non_a_catalogo_scouting, ...withoutOptional } = product;
+  assert.equal((await request(`/api/admin/prodotti/${id}`, {
+    method: 'PUT', body: withoutOptional
+  })).status, 200);
+  assert.equal((await db.get('SELECT non_a_catalogo_scouting FROM prodotti WHERE id = ?', [id])).non_a_catalogo_scouting, 1);
+  const checkout = items => request('/api/prenotazioni', { method: 'POST', token: null, body: {
+    nome_prenotante: 'Test giacenza', email_prenotante: 'stock@example.test', branca_riferimento: 'Branco', items
+  } });
+  for (const quantita of [0, -1, 1.5, 3]) {
+    assert.equal((await checkout([{ prodotto_id: id, quantita }])).status, 400);
+  }
+  assert.equal((await checkout([
+    { prodotto_id: id, quantita: 2 }, { prodotto_id: id, quantita: 1, specialita: 'Altra riga' }
+  ])).status, 400);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 2);
+  const concurrent = await Promise.all([
+    checkout([{ prodotto_id: id, quantita: 2 }]), checkout([{ prodotto_id: id, quantita: 2 }])
+  ]);
+  assert.deepEqual(concurrent.map(result => result.status).sort(), [201, 400]);
+  const bookingId = concurrent.find(result => result.status === 201).data.id;
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+  assert.ok(!(await request('/api/prodotti', { token: null })).data.some(item => item.id === id));
+  const overview = (await request('/api/admin/da-acquistare')).data.find(item => item.id === id);
+  assert.equal(overview.da_magazzino, 2);
+  assert.equal(overview.da_acquistare, 0);
+  assert.equal((await request('/api/admin/da-acquistare/acquista', {
+    method: 'POST', body: { productIds: [id] }
+  })).data.acquistati, 0);
+  const line = await db.get('SELECT * FROM dettagli_prenotazioni WHERE prenotazione_id = ?', [bookingId]);
+  assert.equal((await request(`/api/admin/prenotazioni/${bookingId}`, {
+    token: leaderToken, method: 'PUT', body: { items: [{ ...line, quantita: 3 }] }
+  })).status, 400);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+  assert.equal((await db.get('SELECT quantita FROM dettagli_prenotazioni WHERE id = ?', [line.id])).quantita, 2);
+  assert.equal((await request(`/api/admin/prenotazioni/${bookingId}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 2);
+  assert.equal((await request(`/api/admin/prodotti/${id}`, {
+    method: 'PUT', body: { ...product, non_a_catalogo_scouting: false }
+  })).status, 200);
+  const cleared = await db.get('SELECT * FROM prodotti WHERE id = ?', [id]);
+  assert.equal(cleared.non_a_catalogo_scouting, 0);
+  assert.equal((await request(`/api/admin/prodotti/${id}`, { method: 'DELETE' })).status, 200);
+});
+
+test('physical stock correction moves existing pending reservations to supplier shortages', async () => {
+  const created = await request('/api/admin/prodotti', { method: 'POST', body: {
+    nome: 'Rettifica giacenza test', tipologia: 'Test magazzino', branca: ['Branco'], taglia: 'M',
+    quantita_magazzino: 1, prezzo_vendita: 10, costo_acquisto: 5
+  } });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  const checkout = await request('/api/prenotazioni', { method: 'POST', token: null, body: {
+    nome_prenotante: 'Test rettifica', email_prenotante: 'stock-correction@example.test',
+    branca_riferimento: 'Branco', items: [{ prodotto_id: id, quantita: 1 }]
+  } });
+  assert.equal(checkout.status, 201);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+
+  const before = (await request('/api/admin/da-acquistare')).data.find(product => product.id === id);
+  assert.deepEqual([before.da_magazzino, before.da_acquistare], [1, 0]);
+  for (const quantita_fisica of [-1, 0.5, '0']) {
+    assert.equal((await request(`/api/admin/prodotti/${id}/giacenza`, {
+      method: 'PUT', body: { quantita_fisica }
+    })).status, 400);
+  }
+  assert.equal((await request(`/api/admin/prodotti/${id}/giacenza`, {
+    token: leaderToken, method: 'PUT', body: { quantita_fisica: 0 }
+  })).status, 403);
+
+  const correction = await request(`/api/admin/prodotti/${id}/giacenza`, {
+    method: 'PUT', body: { quantita_fisica: 0 }
+  });
+  assert.equal(correction.status, 200);
+  assert.deepEqual(
+    [correction.data.quantita_fisica, correction.data.quantita_prenotata, correction.data.quantita_magazzino],
+    [0, 1, -1]
+  );
+  const after = (await request('/api/admin/da-acquistare')).data.find(product => product.id === id);
+  assert.deepEqual([after.da_magazzino, after.da_acquistare], [0, 1]);
+
+  const order = await request('/api/admin/da-acquistare/acquista', {
+    method: 'POST', body: { productIds: [id] }
+  });
+  assert.equal(order.status, 200);
+  assert.equal(order.data.pezzi, 1);
+  const line = await db.get('SELECT stato, acquistato FROM dettagli_prenotazioni WHERE prenotazione_id = ?',
+    [checkout.data.id]);
+  assert.deepEqual(line, { stato: 'ordinato', acquistato: 1 });
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+  assert.equal((await request(`/api/admin/prenotazioni/${checkout.data.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await request(`/api/admin/prodotti/${id}`, { method: 'DELETE' })).status, 200);
+});
+
+async function seedMaterial(name, physicalStock, lines, flags = {}) {
+  const reserved = lines.filter(line => !line.acquistato).reduce((sum, line) => sum + line.quantita, 0);
+  const created = await request('/api/admin/prodotti', { method: 'POST', body: {
+    nome: name, tipologia: 'Test magazzino', branca: ['Branco'], taglia: 'M',
+    prezzo_vendita: 20, costo_acquisto: 7, quantita_magazzino: physicalStock == null ? null : physicalStock - reserved,
+    ...flags
+  } });
+  assert.equal(created.status, 201);
+  const id = created.data.id;
+  for (const [index, line] of lines.entries()) {
+    const bookingId = `${name}-${index}`;
+    await db.run(`INSERT INTO prenotazioni
+      (id, nome_prenotante, email_prenotante, branca_riferimento, data_prenotazione, archiviata)
+      VALUES (?, ?, ?, ?, ?, ?)`,
+    [bookingId, bookingId, 'material@example.test', 'Branco', `2020-01-${String(index + 1).padStart(2, '0')} 00:00:00`, line.archiviata || 0]);
+    await db.run(`INSERT INTO dettagli_prenotazioni
+      (prenotazione_id, prodotto_id, quantita, prezzo_unitario, specialita, stato, pagamento_registrato, acquistato)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [bookingId, id, line.quantita, 17, 'Specialita test', line.stato || 'prenotato',
+      line.pagamento_registrato || 0, line.acquistato || 0]);
+  }
+  return id;
+}
+
+const material = async id => {
+  const response = await request('/api/admin/da-acquistare');
+  assert.equal(response.status, 200);
+  return response.data.find(item => item.id === id);
+};
+const materialAction = (id, action) => request(`/api/admin/da-acquistare/${action}`, {
+  method: 'POST', body: { productIds: [id] }
+});
+
+test('material overview allocates oldest first and orders only shortages with exact notification totals', async () => {
+  const id = await seedMaterial('material-order-first', 2, [
+    { quantita: 5 }, { quantita: 1, stato: 'pagato', pagamento_registrato: 1 }
+  ]);
+  let product = await material(id);
+  assert.deepEqual([product.richieste_totali, product.da_magazzino, product.da_acquistare,
+    product.gia_ordinati, product.costo_da_acquistare], [6, 2, 4, 0, 28]);
+  assert.deepEqual(product.destinazioni.map(row => [row.da_magazzino, row.mancanti]), [[2, 3], [0, 1]]);
+  const before = new Set((await db.all('SELECT id FROM notifiche_stato')).map(row => row.id));
+  const purchase = await materialAction(id, 'acquista');
+  assert.equal(purchase.status, 200);
+  assert.equal(purchase.data.pezzi, 4);
+  assert.equal(purchase.data.emailInCoda, 1);
+  const payloads = (await db.all('SELECT * FROM notifiche_stato'))
+    .filter(row => !before.has(row.id)).map(row => JSON.parse(row.payload));
+  assert.equal(payloads.length, 1);
+  assert.equal(payloads[0].tipo, 'articoli_ordinati');
+  assert.equal(payloads[0].items.reduce((sum, row) => sum + row.quantita, 0), 4);
+  const message = buildOrderedItemsMessage(payloads[0]);
+  assert.match(message.text, /Totale costo di acquisto: € 28\.00/);
+  assert.match(message.text, /Totale vendita da chiedere ai clienti: € 68\.00/);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+  product = await material(id);
+  assert.deepEqual([product.da_magazzino, product.da_acquistare, product.gia_ordinati], [2, 0, 4]);
+  const split = await db.all('SELECT * FROM dettagli_prenotazioni WHERE prodotto_id = ?', [id]);
+  assert.equal(split.length, 3);
+  assert.equal(split.reduce((sum, row) => sum + row.quantita * row.prezzo_unitario, 0), 102);
+  assert.ok(split.every(row => row.prezzo_unitario === 17 && row.specialita === 'Specialita test'));
+  assert.equal(split.find(row => row.prenotazione_id.endsWith('-1')).pagamento_registrato, 1);
+  assert.equal((await materialAction(id, 'acquista')).data.pezzi, 0);
+  assert.equal((await materialAction(id, 'magazzino')).data.pezzi, 2);
+  const receipts = await Promise.all([materialAction(id, 'ricevi'), materialAction(id, 'ricevi')]);
+  assert.ok(receipts.every(result => result.status === 200));
+  assert.equal(receipts.reduce((sum, result) => sum + result.data.pezzi, 0), 4);
+  assert.equal(receipts.reduce((sum, result) => sum + result.data.emailInCoda, 0), 2);
+  product = await material(id);
+  assert.deepEqual([product.da_magazzino, product.da_acquistare, product.gia_ordinati, product.ricevuti], [0, 0, 0, 6]);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+  for (const suffix of [0, 1]) {
+    assert.equal((await request(`/api/admin/prenotazioni/material-order-first-${suffix}`, { method: 'DELETE' })).status, 200);
+  }
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 2);
+});
+
+test('parallel stock preparation and supplier ordering split quantities without duplicating reservations', async () => {
+  const id = await seedMaterial('material-parallel', 2, [{ quantita: 5, pagamento_registrato: 1 }]);
+  const results = await Promise.all([
+    materialAction(id, 'magazzino'), materialAction(id, 'magazzino'),
+    materialAction(id, 'acquista'), materialAction(id, 'acquista')
+  ]);
+  assert.ok(results.every(result => result.status === 200));
+  assert.equal(results[0].data.pezzi + results[1].data.pezzi, 2);
+  assert.equal(results[2].data.pezzi + results[3].data.pezzi, 3);
+  let product = await material(id);
+  assert.deepEqual([product.da_magazzino, product.da_acquistare, product.gia_ordinati, product.ricevuti], [0, 0, 3, 2]);
+  const lines = await db.all('SELECT * FROM dettagli_prenotazioni WHERE prodotto_id = ?', [id]);
+  assert.equal(lines.length, 2);
+  assert.ok(lines.every(row => row.pagamento_registrato === 1 && row.prezzo_unitario === 17));
+  const supplier = lines.find(row => row.stato === 'ordinato');
+  await updateItemStates(admin, [supplier.id], 'prenotato');
+  product = await material(id);
+  assert.deepEqual([product.da_magazzino, product.da_acquistare, product.gia_ordinati], [0, 3, 0]);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, -3);
+  await updateItemStates(admin, [supplier.id], 'ordinato');
+  assert.equal((await materialAction(id, 'ricevi')).data.pezzi, 3);
+  assert.equal((await materialAction(id, 'magazzino')).data.pezzi, 0);
+  assert.equal((await materialAction(id, 'ricevi')).data.emailInCoda, 0);
+});
+
+test('surplus stock is never purchased and concurrent checkout preserves coverage', async () => {
+  const id = await seedMaterial('material-surplus', 10, [{ quantita: 3 }]);
+  assert.deepEqual([(await material(id)).da_magazzino, (await material(id)).da_acquistare], [3, 0]);
+  assert.equal((await materialAction(id, 'acquista')).data.pezzi, 0);
+  const [preparation, checkout] = await Promise.all([
+    materialAction(id, 'magazzino'),
+    request('/api/prenotazioni', { method: 'POST', token: null, body: {
+      nome_prenotante: 'Nuova richiesta', email_prenotante: 'new-material@example.test',
+      branca_riferimento: 'Branco', items: [{ prodotto_id: id, quantita: 9 }]
+    } })
+  ]);
+  assert.equal(preparation.status, 200);
+  assert.ok([3, 10].includes(preparation.data.pezzi));
+  assert.equal(checkout.status, 201);
+  const product = await material(id);
+  assert.equal(product.richieste_totali, 12);
+  assert.equal(product.da_magazzino + product.ricevuti, 10);
+  assert.equal(product.da_acquistare, 2);
+  assert.equal((await materialAction(id, 'acquista')).data.pezzi, 2);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [id])).quantita_magazzino, 0);
+});
+
+test('material handles uncensused stock, stock-only items, inactive rows and atomic validation', async () => {
+  const unlimited = await seedMaterial('material-null', null, [{ quantita: 4 }]);
+  const used = await seedMaterial('material-used', 2, [{ quantita: 2 }], { usato: true });
+  const outside = await seedMaterial('material-outside', 0, [{ quantita: 1 }], { non_a_catalogo_scouting: true });
+  const inactive = await seedMaterial('material-inactive', 5, [
+    { quantita: 2, archiviata: 1 }, { quantita: 1, stato: 'non_disponibile' }, { quantita: 4 }
+  ]);
+  const nullProduct = await material(unlimited);
+  assert.deepEqual([nullProduct.da_magazzino, nullProduct.da_acquistare], [0, 4]);
+  assert.equal((await materialAction(unlimited, 'magazzino')).data.pezzi, 0);
+  assert.equal((await materialAction(unlimited, 'acquista')).data.pezzi, 4);
+  assert.equal((await db.get('SELECT quantita_magazzino FROM prodotti WHERE id = ?', [unlimited])).quantita_magazzino, null);
+  assert.equal((await material(used)).da_magazzino, 2);
+  assert.equal((await materialAction(used, 'acquista')).data.pezzi, 0);
+  assert.equal((await materialAction(used, 'magazzino')).data.pezzi, 2);
+  const blocked = await material(outside);
+  assert.deepEqual([blocked.non_acquistabili, blocked.da_acquistare], [1, 0]);
+  assert.equal((await materialAction(outside, 'acquista')).data.pezzi, 0);
+  const active = await material(inactive);
+  assert.deepEqual([active.richieste_totali, active.da_magazzino, active.da_acquistare, active.non_disponibili], [5, 2, 2, 1]);
+  assert.equal(active.destinazioni.length, 2);
+  assert.equal((await request('/api/admin/da-acquistare', { token: leaderToken })).status, 403);
+  assert.equal((await request('/api/admin/da-acquistare/acquista', {
+    token: leaderToken, method: 'POST', body: { productIds: [inactive] }
+  })).status, 403);
+  for (const productIds of [[], [0], ['1'], [1.5], Array(501).fill(inactive)]) {
+    assert.equal((await request('/api/admin/da-acquistare/acquista', {
+      method: 'POST', body: { productIds }
+    })).status, 400);
+  }
+  assert.equal((await materialAction(inactive, 'sconosciuta')).status, 400);
+  const before = await db.all('SELECT * FROM dettagli_prenotazioni WHERE prodotto_id = ?', [inactive]);
+  assert.equal((await request('/api/admin/da-acquistare/acquista', {
+    method: 'POST', body: { productIds: [inactive, 999999] }
+  })).status, 404);
+  assert.deepEqual(await db.all('SELECT * FROM dettagli_prenotazioni WHERE prodotto_id = ?', [inactive]), before);
+});
+
 test('removing an account immediately revokes its sessions', async () => {
   const account = await db.get("SELECT id FROM admin_users WHERE email = 'capo@example.test'");
   await db.run('UPDATE admin_users SET branche = ? WHERE id = ?', ['["Branco","Clan"]', account.id]);
@@ -689,12 +975,13 @@ test('schema upgrades legacy purchased lines and preserves states on reinitializ
   await initializeDatabase({ filename });
   db = getDatabase();
   const product = await db.get('SELECT * FROM prodotti WHERE id = 1');
+  assert.equal(product.non_a_catalogo_scouting, 0);
   assert.equal(product.prezzo_vendita, process.env.DB_HOST ? 25 : 19.5);
   assert.equal(product.costo_acquisto, product.prezzo_vendita);
   for (const column of ['prezzo', 'scouting_id_prodotto', 'scouting_caratteristica_id', 'esaurito_scouting']) {
     assert.ok(!(column in product));
   }
-  await db.run('UPDATE prodotti SET prezzo_vendita = 31, costo_acquisto = 9 WHERE id = 1');
+  await db.run('UPDATE prodotti SET prezzo_vendita = 31, costo_acquisto = 9, non_a_catalogo_scouting = 1 WHERE id = 1');
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ordinato');
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 2')).stato, 'prenotato');
   await db.run("UPDATE dettagli_prenotazioni SET stato = 'ricevuto' WHERE id = 1");
@@ -712,6 +999,8 @@ test('schema upgrades legacy purchased lines and preserves states on reinitializ
   db = getDatabase();
   const preservedPrices = await db.get('SELECT prezzo_vendita, costo_acquisto FROM prodotti WHERE id = 1');
   assert.deepEqual(preservedPrices, { prezzo_vendita: 31, costo_acquisto: 9 });
+  const preservedVariant = await db.get('SELECT non_a_catalogo_scouting FROM prodotti WHERE id = 1');
+  assert.deepEqual(preservedVariant, { non_a_catalogo_scouting: 1 });
   assert.equal((await db.get('SELECT stato FROM dettagli_prenotazioni WHERE id = 1')).stato, 'ricevuto');
   const migrated = await db.get('SELECT * FROM dettagli_prenotazioni WHERE id = 2');
   assert.equal(migrated.stato, 'prenotato');

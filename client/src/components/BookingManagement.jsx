@@ -4,6 +4,11 @@ import { Link } from 'react-router-dom'
 import '../styles/components.css'
 import { useAppDialog } from './AppDialog'
 
+const bookingItemStates = [
+  ['prenotato', 'Prenotato'], ['pagato', 'Pagato'], ['non_disponibile', 'Non disponibile'],
+  ['ordinato', 'Ordinato'], ['ricevuto', 'Ricevuto'], ['consegnato', 'Consegnato']
+]
+
 export default function BookingManagement() {
   const { showMessage, showConfirm, dialogElement } = useAppDialog()
   const [bookings, setBookings] = useState([])
@@ -108,7 +113,7 @@ export default function BookingManagement() {
 
   const filteredBookings = useMemo(() => bookings.filter(booking => {
     const search = filters.search.trim().toLowerCase()
-    const matchesSearch = !search || [booking.nome_prenotante, booking.email_prenotante, booking.branca_riferimento]
+    const matchesSearch = !search || [booking.nome_prenotante, booking.email_prenotante, booking.branca_riferimento, booking.genitore_di]
       .filter(Boolean)
       .some(value => value.toLowerCase().includes(search))
     const bookingDate = booking.data_prenotazione ? new Date(booking.data_prenotazione).toISOString().slice(0, 10) : ''
@@ -265,7 +270,7 @@ export default function BookingManagement() {
                 {viewMode === 'attive' && <td><input type="checkbox" aria-label={`Seleziona prenotazione di ${booking.nome_prenotante}`}
                   checked={selectedIds.includes(booking.id)} disabled={archiving}
                   onChange={e => toggleSelection([booking.id], e.target.checked)} /></td>}
-                <td>{booking.nome_prenotante}</td>
+                <td>{booking.nome_prenotante}{booking.genitore_di && <small style={{ display: 'block' }}>Genitore di: {booking.genitore_di}</small>}</td>
                 <td>{booking.email_prenotante}</td>
                 <td>{booking.branca_riferimento || '-'}</td>
                 <td>{new Date(booking.data_prenotazione).toLocaleDateString('it-IT')}</td>
@@ -308,17 +313,20 @@ export default function BookingManagement() {
 }
 
 export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, startEditing = false }) {
-  const { showMessage, dialogElement } = useAppDialog()
+  const { showMessage, showConfirm, dialogElement } = useAppDialog()
   const [booking, setBooking] = useState(null)
   const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(startEditing)
   const [error, setError] = useState('')
   const isLeader = user?.ruolo === 'capo_unita'
+  const [itemStateValues, setItemStateValues] = useState({})
+  const [updatingItem, setUpdatingItem] = useState(false)
   const [editForm, setEditForm] = useState({
     nome_prenotante: '',
     email_prenotante: '',
     branca_riferimento: '',
+    genitore_di: '',
     note: '',
     items: []
   })
@@ -335,10 +343,12 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
     try {
       const response = await axios.get(`/api/admin/prenotazioni/${bookingId}`)
       setBooking(response.data)
+      setItemStateValues(Object.fromEntries(response.data.items.map(item => [item.id, item.stato])))
       setEditForm({
         nome_prenotante: response.data.nome_prenotante,
         email_prenotante: response.data.email_prenotante,
         branca_riferimento: response.data.branca_riferimento || '',
+        genitore_di: response.data.genitore_di || '',
         note: response.data.note || '',
         items: response.data.items.map(item => ({
           id: item.id,
@@ -431,6 +441,25 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
     }
   }
 
+  const handleUpdateItemState = async item => {
+    const stato = itemStateValues[item.id]
+    if (!stato || stato === item.stato) return
+    const label = bookingItemStates.find(([value]) => value === stato)?.[1] || stato
+    if (!await showConfirm(`Impostare lo stato "${label}" per ${item.nome}${item.taglia ? ` (${item.taglia})` : ''}?`)) return
+    setUpdatingItem(true)
+    try {
+      const response = await axios.post('/api/admin/articoli-prenotati/stato', { ids: [item.id], stato })
+      await fetchDetails()
+      if (onBookingUpdated) await onBookingUpdated()
+      showMessage(`${response.data.aggiornati} articolo aggiornato.`, 'Stato aggiornato')
+    } catch (error) {
+      console.error('Errore aggiornamento stato articolo:', error)
+      showMessage(error.response?.data?.error || 'Errore aggiornamento stato articolo', 'Errore')
+    } finally {
+      setUpdatingItem(false)
+    }
+  }
+
   if (loading) return <div className="modal-overlay"><div className="modal">Caricamento...</div></div>
   if (error) return <div className="modal-overlay"><div className="modal" role="alert">{error} <button onClick={onClose}>Chiudi</button></div></div>
   if (!booking) return null
@@ -440,7 +469,7 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-large booking-details-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{isEditing ? '✏️ Modifica Prenotazione' : '👁️ Dettagli Prenotazione'}</h3>
           <div className="modal-header-actions">
@@ -460,11 +489,12 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
         <div className="modal-content">
           {!isEditing ? (
             <>
-              <div className="detail-section">
+              <div className="detail-section booking-items-section">
                 <h4>Informazioni Prenotante</h4>
                 <p><strong>Nome:</strong> {booking.nome_prenotante}</p>
                 <p><strong>Email:</strong> {booking.email_prenotante}</p>
                 <p><strong>Branca di riferimento:</strong> {booking.branca_riferimento || '-'}</p>
+                {booking.genitore_di && <p><strong>Genitore di:</strong> {booking.genitore_di}</p>}
                 <p><strong>Data:</strong> {new Date(booking.data_prenotazione).toLocaleString('it-IT')}</p>
                 {booking.note && <p><strong>Note:</strong> {booking.note}</p>}
               </div>
@@ -478,19 +508,32 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
                       <th>Quantità</th>
                       <th>Prezzo Unit.</th>
                       <th>Totale</th>
+                      <th>Stato</th>
+                      {!isLeader && <th>Azioni</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {booking.items.map((item, idx) => (
                       <tr key={idx}>
-                        <td>{item.nome}{item.taglia ? ` (${item.taglia})` : ''}<br />{item.stato?.replaceAll('_', ' ')}</td>
+                        <td>{item.nome}{item.taglia ? ` (${item.taglia})` : ''}{item.specialita ? ` — ${item.specialita}` : ''}</td>
                         <td>{item.quantita}</td>
                         <td>€ {item.prezzo_unitario.toFixed(2)}</td>
                         <td>€ {(item.quantita * item.prezzo_unitario).toFixed(2)}</td>
+                        <td>{item.stato?.replaceAll('_', ' ')}</td>
+                        {!isLeader && <td>
+                          <div className="booking-item-state-control">
+                            <select className="status-select" aria-label={`Nuovo stato per ${item.nome}`} value={itemStateValues[item.id] || item.stato}
+                              disabled={updatingItem} onChange={event => setItemStateValues(current => ({ ...current, [item.id]: event.target.value }))}>
+                              {bookingItemStates.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                            </select>
+                            <button type="button" className="btn-small btn-primary" disabled={updatingItem || itemStateValues[item.id] === item.stato}
+                              onClick={() => handleUpdateItemState(item)}>Aggiorna</button>
+                          </div>
+                        </td>}
                       </tr>
                     ))}
                     <tr className="total-row">
-                      <td colSpan="3"><strong>Totale:</strong></td>
+                      <td colSpan={isLeader ? 4 : 5}><strong>Totale:</strong></td>
                       <td><strong>€ {total.toFixed(2)}</strong></td>
                     </tr>
                   </tbody>
@@ -529,6 +572,16 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
               </div>
 
               <div className="form-group">
+                <label htmlFor="edit-genitore-di">Genitore di (opzionale):</label>
+                <input
+                  id="edit-genitore-di"
+                  type="text"
+                  value={editForm.genitore_di}
+                  onChange={(e) => setEditForm({ ...editForm, genitore_di: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
                 <label>Note:</label>
                 <textarea
                   rows="2"
@@ -553,7 +606,7 @@ export function BookingDetails({ bookingId, onClose, onBookingUpdated, user, sta
                     <tbody>
                       {editForm.items.map((item, idx) => (
                         <tr key={idx}>
-                          <td><strong>{item.nome}</strong></td>
+                          <td><strong>{item.nome}{item.specialita ? ` — ${item.specialita}` : ''}</strong></td>
                           <td>
                             <input
                               type="number"

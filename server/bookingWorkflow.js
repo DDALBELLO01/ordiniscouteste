@@ -4,7 +4,7 @@ import { getDatabase, withTransaction } from './database.js';
 import { sendBookingStatusEmail, sendLeaderBookingEmail, sendOrderedItemsEmail } from './emailService.js';
 
 const scrypt = promisify(scryptCallback);
-export const BOOKING_STATES = ['prenotato', 'pagato', 'non_disponibile', 'ordinato', 'ricevuto'];
+export const BOOKING_STATES = ['prenotato', 'pagato', 'non_disponibile', 'ordinato', 'ricevuto', 'consegnato'];
 export const BRANCHES = ['Cerchio', 'Branco', 'Riparto Ginestra', 'Riparto Sorgente', 'Riparto Atheste', 'Clan', 'Fuoco', 'RS'];
 const notifiedStates = new Set(['ricevuto', 'non_disponibile']);
 const branchAliases = { coccinelle: 'cerchio', lupetti: 'branco', rover: 'clan', capi: 'rs' };
@@ -113,12 +113,15 @@ export async function deleteSelectedBookings(user, ids) {
   });
 }
 
-export async function updateItemStates(user, ids, state) {
-  if (!Array.isArray(ids) || !ids.length || ids.length > 500 ||
+export async function updateItemStates(user, ids, state, { unlimited = false } = {}) {
+  if (!Array.isArray(ids) || !ids.length || (!unlimited && ids.length > 500) ||
       ids.some(id => !Number.isSafeInteger(id) || id <= 0) || !BOOKING_STATES.includes(state)) {
     fail(400, 'Seleziona da 1 a 500 righe e uno stato valido');
   }
-  if (user.ruolo !== 'admin' && state !== 'pagato') fail(403, 'Puoi impostare soltanto lo stato Pagato');
+  const leaderDelivery = user.ruolo === 'capo_unita' && state === 'consegnato';
+  if (user.ruolo !== 'admin' && state !== 'pagato' && !leaderDelivery) {
+    fail(403, 'Puoi impostare soltanto lo stato Pagato o Consegnato');
+  }
   const uniqueIds = [...new Set(ids)];
   return withTransaction(async db => {
     if (db.pool) {
@@ -141,9 +144,26 @@ export async function updateItemStates(user, ids, state) {
     if (user.ruolo !== 'admin' && rows.some(row => !ownsBranch(user, row.branca_riferimento))) {
       fail(403, 'Puoi modificare soltanto le prenotazioni delle tue branche');
     }
+    if (leaderDelivery && rows.some(row => Number(row.pagamento_registrato) !== 1 ||
+        !['pagato', 'ricevuto'].includes(row.stato))) {
+      fail(400, 'Puoi consegnare soltanto articoli pagati e pronti per il ritiro');
+    }
     const changed = rows.filter(row => row.stato !== state);
+    if (db.pool && changed.length) {
+      await db.all(`SELECT id FROM prodotti WHERE id IN (${changed.map(() => '?').join(',')})
+        ORDER BY id FOR UPDATE`, changed.map(row => row.prodotto_id));
+    }
     const bookings = new Map();
     for (const row of changed) {
+      const fromSupplier = Number(row.acquistato) === 1;
+      const order = state === 'ordinato' && !fromSupplier;
+      const reopen = ['prenotato', 'pagato'].includes(state) && fromSupplier;
+      if (order || reopen) {
+        await db.run(`UPDATE prodotti SET quantita_magazzino = quantita_magazzino + ?
+          WHERE id = ? AND quantita_magazzino IS NOT NULL`,
+        [order ? Number(row.quantita) : -Number(row.quantita), row.prodotto_id]);
+        await db.run('UPDATE dettagli_prenotazioni SET acquistato = ? WHERE id = ?', [order ? 1 : 0, row.id]);
+      }
       await db.run('UPDATE dettagli_prenotazioni SET stato = ? WHERE id = ?', [state, row.id]);
       if (state === 'pagato') {
         await db.run('UPDATE dettagli_prenotazioni SET pagamento_registrato = 1 WHERE id = ?', [row.id]);
@@ -258,8 +278,8 @@ export function registerBookingWorkflow(app) {
     if (typeof email !== 'string' || typeof password !== 'string' || password.length > 1024) fail(401, 'Credenziali non valide');
     const db = getDatabase();
     let user;
-    if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD &&
-        email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+    if (process.env.ADMIN_USER && process.env.ADMIN_PASSWORD &&
+        email === process.env.ADMIN_USER && password === process.env.ADMIN_PASSWORD) {
       user = { id: null, nome: 'Admin', email, ruolo: 'admin', branche: [] };
     } else {
       const account = await db.get('SELECT * FROM admin_users WHERE email = ?', [email.trim().toLowerCase()]);
@@ -280,7 +300,7 @@ export function registerBookingWorkflow(app) {
     const session = await db.get('SELECT * FROM sessioni WHERE token_hash = ? AND scadenza > ?', [digest(token), Date.now()]);
     if (!session) fail(401, 'Sessione scaduta: accedi nuovamente');
     if (session.utente_id === null) {
-      req.user = { id: null, nome: 'Admin', email: process.env.ADMIN_EMAIL, ruolo: 'admin', branche: [] };
+      req.user = { id: null, nome: 'Admin', email: process.env.ADMIN_USER, ruolo: 'admin', branche: [] };
     } else {
       const account = await db.get('SELECT * FROM admin_users WHERE id = ?', [session.utente_id]);
       if (!account) fail(401, 'Account non disponibile');
@@ -310,7 +330,7 @@ export function registerBookingWorkflow(app) {
     const assigned = user.branche.map(normalizeBranch);
     const scope = [...new Set([...assigned, ...Object.keys(branchAliases).filter(alias => assigned.includes(branchAliases[alias]))])];
     const rows = await getDatabase().all(`
-      SELECT dp.*, p.nome, p.taglia, pr.nome_prenotante, pr.email_prenotante,
+      SELECT dp.*, p.nome, p.taglia, pr.nome_prenotante, pr.email_prenotante, pr.genitore_di,
         pr.branca_riferimento, pr.data_prenotazione
       FROM dettagli_prenotazioni dp
       JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
@@ -352,6 +372,11 @@ export function registerBookingWorkflow(app) {
     res.json(result);
   }));
 
+  app.post('/api/admin/prenotazioni-capo/consegna', route(async (req, res) => {
+    if (req.user.ruolo !== 'capo_unita') fail(403, 'Accesso riservato ai capi unità');
+    res.json(await updateItemStates(req.user, req.body?.ids, 'consegnato'));
+  }));
+
   app.use('/api/admin', (req, res, next) => {
     if (req.path === '/prodotti' && req.method === 'GET') return next();
     if (req.user.ruolo === 'capo_unita' && /^\/prenotazioni\/[^/]+$/.test(req.path) &&
@@ -363,7 +388,7 @@ export function registerBookingWorkflow(app) {
   app.get('/api/admin/articoli-prenotati', route(async (req, res) => {
     const archived = req.query.archiviate === 'true' ? 1 : 0;
     const rows = await getDatabase().all(`
-      SELECT dp.*, p.nome, p.taglia, p.usato, pr.nome_prenotante, pr.email_prenotante,
+      SELECT dp.*, p.nome, p.taglia, p.usato, pr.nome_prenotante, pr.email_prenotante, pr.genitore_di,
         pr.branca_riferimento, pr.data_prenotazione
       FROM dettagli_prenotazioni dp
       JOIN prenotazioni pr ON pr.id = dp.prenotazione_id
@@ -423,7 +448,7 @@ export function registerBookingWorkflow(app) {
       fail(400, 'Inserisci nome, email valida, password di almeno 10 caratteri e una sola branca valida');
     }
     const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail === process.env.ADMIN_EMAIL?.toLowerCase()) fail(409, 'Email già usata dall’admin');
+    if (normalizedEmail === process.env.ADMIN_USER?.toLowerCase()) fail(409, 'Email già usata dall’admin');
     const db = getDatabase();
     if (await db.get('SELECT id FROM admin_users WHERE email = ?', [normalizedEmail])) fail(409, 'Email già registrata');
     await db.run('INSERT INTO admin_users (nome, email, password_hash, ruolo, branche) VALUES (?, ?, ?, ?, ?)',
